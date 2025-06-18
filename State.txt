@@ -1,0 +1,60 @@
+Bit-State explanation:
+uint8_t Bit = xxxxxxxx
+    -   The first 4 bits are the so called high bits and the last 4 bits are called low bits
+        e.g. uint8_t Bit = xxxx|xxxx
+                           High|low
+    -   The the last bit of the High bits determin wehter there is an wall/obstacle in that cell or not 
+        e.g. NO-wall     uint8_t Bit = xxx0|xxxx
+                                       High|low
+        e.g. wall        uint8_t Bit = xxx1|xxxx
+                                       High|low
+    -   The low bits determin wehter a partical is in an certain direction
+        There are 4 directions North (N), East (E), South (S) and West (W). Per cell only one partical in each direction is allowed. So a Cell can have up to 1 partical in (N),(E),(S) and (W). The bits are then defined as follows.
+        e.g. uint8_t Bit = xxxx|NESW
+                           High|low 
+        One Partical:
+        e.g. uint8_t Bit = xxxx|1000    North     
+        e.g. uint8_t Bit = xxxx|0100    East
+        e.g. uint8_t Bit = xxxx|0010    South
+        e.g. uint8_t Bit = xxxx|0001    West 
+        Two Paticals:
+        e.g. uint8_t Bit = xxxx|1001    North-West
+        e.g. uint8_t Bit = xxxx|1010    North-South
+        e.g. uint8_t Bit = xxxx|1100    Noth-East
+        e.g. uint8_t Bit = xxxx|0101    East-West
+        e.g. uint8_t Bit = xxxx|0110    East-South
+        e.g. uint8_t Bit = xxxx|0011    South-West
+        Three Particals:
+        e.g. uint8_t Bit = xxxx|1011    North-South-West
+        e.g. uint8_t Bit = xxxx|1101    North-East-West
+        e.g. uint8_t Bit = xxxx|1110    North-East-South
+        e.g. uint8_t Bit = xxxx|0111    East-South-West
+        Four Particals:
+        e.g. uint8_t Bit = xxxx|1111    North-East-South-West
+    >   The cellular automata is an NxN-matrix where each element of the matrix corresponds to an cell that looks like this e.g. uint8_t Bit = xxxx|1111    North-East-South-West. So each cell can have an obstacle/wall and one of each partical type
+
+Kollision:
+    -   When two particals collide frontal so (W)->  <-(E) then they change their directions to (N) and (S)
+        The state transition would look like this: 
+        e.g. uint8_t Bit = xxx0|1010    North-South ------> e.g. uint8_t Bit = xxx0|0101    East-West
+        e.g. uint8_t Bit = xxx0|0101    East-West   ------> e.g. uint8_t Bit = xxx0|1010    North-South 
+    -   Other then this partical will not collide. So also if there are three particals the state will remain the same.
+        When four particals are in one cell theoretically they will collide but agian into a North-East-South-West configuration
+    !   Cells with an wall bit set to 1, do not take part in the collison step. Since they follow an diffrent state transition table. Also physically the particals never collide with each other only with the wall
+
+Propagation:
+    -   After or bevore, it does not matter, the particals collide they will propagate to the next neighbouring cell. 
+        The difrence in the order comes down to the assumtion of the starting point since it is an cyclic iteration.
+        Each partical moves to the direction they are in, so an South partical will move to the bottom neighbour and so forth. 
+    >   It will be implementet like this:
+        if (current_cell & 0b00001000) (Checks wehter in the current cell is an north partical)
+            upper neighbour =| 0b00001000 (Gives the upper neighbour the north partical. This functions as an addition. So the upper neighbour gets an north particel independent wether it has an east, south or west partical)
+
+Reflection:
+    -   In this lattice there are obstical or walls, as touchted above. on these a partical is not only deflected but relfected. So it chages its direction 180˚.
+        Our method lets partical propagate an cell that contains an obstacle/wall. Yet it is not an colission because its state transition is diffrent. Hence it makes sence to implement a diffrent function that only handels reflections.
+        The state transitions would look like this:
+        e.g. uint8_t Bit = xxx1|1000    North   ------> e.g. uint8_t Bit = xxx1|0010    South
+        e.g. uint8_t Bit = xxx1|0100    East    ------> e.g. uint8_t Bit = xxx1|0001    West
+        e.g. uint8_t Bit = xxx1|0010    South   ------> e.g. uint8_t Bit = xxx1|1000    North
+        e.g. uint8_t Bit = xxx1|0001    West    ------> e.g. uint8_t Bit = xxx1|0100    East
