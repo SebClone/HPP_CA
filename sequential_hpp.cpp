@@ -2,6 +2,9 @@
 #include <cstdint> // für uint8_t
 #include <bitset>  // für std::bitset
 
+const int grid_size = 3;
+const int num_itterations = 3; // Number of iterations for the simulation
+
 // ----------------------------------------------
 // Custom functions for printing bits and grid
 // ----------------------------------------------
@@ -11,11 +14,11 @@ void printBits(uint8_t value)
     std::cout << bits;
 }
 
-void printGrid(uint8_t grid[3][3])
+void printGrid(uint8_t grid[grid_size][grid_size])
 {
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < grid_size; ++i)
     {
-        for (int j = 0; j < 3; ++j)
+        for (int j = 0; j < grid_size; ++j)
         {
             printBits(grid[i][j]);
             std::cout << " ";
@@ -116,15 +119,22 @@ uint8_t reflection(uint8_t current_cell)
 
 int main()
 {
+    std::cout << "Number of iterations: " << num_itterations << std::endl;
+    std::cout << "Grid size:" << grid_size << "x" << grid_size << std::endl;
+    std::cout << "----------------------------------------------" << std::endl;
+
     // ----------------------------------------------
     // Initialization of the grid
-    // Grid layout (3x3): each entry is a cell with bits: xxxknesw
+    // Grid layout (grid_sizexgrid_size): each entry is a cell with bits: xxxknesw
     // ----------------------------------------------
-    std::cout << "Particle Bit" << std::endl;
-    std::cout << "k: wall, n: north, e: east, s: south, w: west" << std::endl;
-    std::cout << "Example: xxxkNESW" << std::endl;
+    // std::cout << "Particle Bit" << std::endl;
+    // std::cout << "k: wall, n: north, e: east, s: south, w: west" << std::endl;
+    // std::cout << "Example: xxxkNESW" << std::endl;
 
-    uint8_t grid[3][3] = {
+    // Initialize the grid with particles represented by bits
+    std::cout << "Initialising the grind with particals..." << std::endl;
+    std::cout << std::endl;
+    uint8_t grid[grid_size][grid_size] = {
         {0b00000010, 0b00000000, 0b00001000},
         {0b00001000, 0b00001111, 0b00000000},
         {0b00000101, 0b00010000, 0b00001010}};
@@ -132,72 +142,89 @@ int main()
     // Print the initial grid
     std::cout << "Initial Grid:" << std::endl;
     printGrid(grid);
-
-    // ----------------------------------------------
-    // Simulate collision
-    // Collision is applied to each cell in the grid
-
-    for (int i = 0; i < 3; ++i)
+    for (int r = 0; r < num_itterations; ++r)
     {
-        for (int j = 0; j < 3; ++j)
+        std::cout << "----------------------------------------------" << std::endl;
+        std::cout << "Iteration: " << r << std::endl;
+        std::cout << std::endl;
+        std::cout << "Grid by iteration " << r << std::endl;
+        printGrid(grid);
+        std::cout << "----------------------------------------------" << std::endl;
+        // ----------------------------------------------
+        // Simulate collision
+        // Collision is applied to each cell in the grid
+        std::cout << "Simulating collision..." << std::endl;
+        std::cout << std::endl;
+        for (int i = 0; i < grid_size; ++i)
         {
-            grid[i][j] = collision(grid[i][j]);
+            for (int j = 0; j < grid_size; ++j)
+            {
+                grid[i][j] = collision(grid[i][j]);
+            }
         }
-    }
-    // Print the grid after collision
-    std::cout << "Grid after collision:" << std::endl;
-    printGrid(grid);
+        // Print the grid after collision
+        std::cout << "Grid after collision:" << std::endl;
+        printGrid(grid);
+        std::cout << std::endl;
 
-    // ----------------------------------------------
-    // propagate the particles
-    // ----------------------------------------------
-    uint8_t propagation_grid[3][3] = {0}; // Initialize a new grid to store the propagated values
-
-    for (int i = 0; i < 3; ++i)
-    {
-        for (int j = 0; j < 3; ++j)
+        // ----------------------------------------------
+        // propagate the particles
+        // ----------------------------------------------
+        uint8_t propagation_grid[grid_size][grid_size] = {0}; // Initialize a new grid to store the propagated values
+        std::cout << "Propagating particles..." << std::endl;
+        std::cout << std::endl;
+        for (int i = 0; i < grid_size; ++i)
         {
-            // Check wehter there is a next cell to propagate to
-            uint8_t &center = grid[i][j]; // current center cell
+            for (int j = 0; j < grid_size; ++j)
+            {
+                // Check wehter there is a next cell to propagate to
+                uint8_t &center = grid[i][j]; // current center cell
 
-            // Toroidal neighbor assignments
-            // Using + 3 and % 3 to move in a toroidal manner
-            uint8_t &up = propagation_grid[(i - 1 + 3) % 3][j];
-            uint8_t &down = propagation_grid[(i + 1) % 3][j];
-            uint8_t &left = propagation_grid[i][(j - 1 + 3) % 3];
-            uint8_t &right = propagation_grid[i][(j + 1) % 3];
+                // Toroidal neighbor assignments
+                // Using + grid_size and % grid_size to move in a toroidal manner
+                uint8_t &up = propagation_grid[(i - 1 + grid_size) % grid_size][j];
+                uint8_t &down = propagation_grid[(i + 1) % grid_size][j];
+                uint8_t &left = propagation_grid[i][(j - 1 + grid_size) % grid_size];
+                uint8_t &right = propagation_grid[i][(j + 1) % grid_size];
 
-            uint8_t temp = center;
-            propagate(temp, up, down, left, right);
-            propagation_grid[i][j] |= temp; // Not prpagatet particals will remain in the gird and not be deleted
+                uint8_t temp = center;
+                propagate(temp, up, down, left, right);
+                propagation_grid[i][j] |= temp; // Not prpagatet particals will remain in the gird and not be deleted
+            }
         }
-    }
 
-    // Copy the propagated values back to the original grid
-    for (int i = 0; i < 3; ++i)
-    {
-        for (int j = 0; j < 3; ++j)
+        // Copy the propagated values back to the original grid
+        for (int i = 0; i < grid_size; ++i)
         {
-            grid[i][j] = propagation_grid[i][j];
+            for (int j = 0; j < grid_size; ++j)
+            {
+                grid[i][j] = propagation_grid[i][j];
+            }
         }
-    }
-    // Print the grid after propagation
-    std::cout << "Grid after propagation:" << std::endl;
-    printGrid(grid);
+        // Print the grid after propagation
+        std::cout << "Grid after propagation:" << std::endl;
+        printGrid(grid);
+        std::cout << std::endl;
 
-    // ----------------------------------------------
-    // Reflect the particles in the grid
-    // ----------------------------------------------
-    for (int i = 0; i < 3; ++i)
-    {
-        for (int j = 0; j < 3; ++j)
+        // ----------------------------------------------
+        // Reflect the particles in the grid
+        // ----------------------------------------------
+        std::cout << "Reflecting particles..." << std::endl;
+        std::cout << std::endl;
+        for (int i = 0; i < grid_size; ++i)
         {
-            grid[i][j] = reflection(grid[i][j]);
+            for (int j = 0; j < grid_size; ++j)
+            {
+                grid[i][j] = reflection(grid[i][j]);
+            }
         }
+        // Print the grid after reflection
+        std::cout << "Grid after reflection:" << std::endl;
+        printGrid(grid);
+        std::cout << std::endl;
+        std::cout << "End of iteration " << r << std::endl;
+        std::cout << "----------------------------------------------" << std::endl;
     }
-    // Print the grid after reflection
-    std::cout << "Grid after reflection:" << std::endl;
-    printGrid(grid);
 
     return 0;
 }
