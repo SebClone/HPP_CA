@@ -118,12 +118,16 @@ int main()
 {
     // ----------------------------------------------
     // Initialization of the grid
-    // Grid layout (3x3): each entry is a cell with bits: xxxknosw
+    // Grid layout (3x3): each entry is a cell with bits: xxxknesw
     // ----------------------------------------------
+    std::cout << "Particle Bit" << std::endl;
+    std::cout << "k: wall, n: north, e: east, s: south, w: west" << std::endl;
+    std::cout << "Example: xxxkNESW" << std::endl;
+
     uint8_t grid[3][3] = {
-        {0b00000010, 0b00000000, 0b00000000},
+        {0b00000010, 0b00000000, 0b00001000},
         {0b00001000, 0b00001111, 0b00000000},
-        {0b00000000, 0b00010000, 0b00001010}};
+        {0b00000101, 0b00010000, 0b00001010}};
 
     // Print the initial grid
     std::cout << "Initial Grid:" << std::endl;
@@ -156,14 +160,12 @@ int main()
             // Check wehter there is a next cell to propagate to
             uint8_t &center = grid[i][j]; // current center cell
 
-            // Checks if the current cell is not in the top row of the grid. If it is, it uses the current cell itself to avoid out-of-bounds access.
-            uint8_t &up = (i > 0) ? propagation_grid[i - 1][j] : propagation_grid[i][j];
-            // Checks if the current cell is on the bottom row of the grid
-            uint8_t &down = (i < 2) ? propagation_grid[i + 1][j] : propagation_grid[i][j];
-            // Checks if the current cell is not in the leftmost column of the grid.
-            uint8_t &left = (j > 0) ? propagation_grid[i][j - 1] : propagation_grid[i][j];
-            // Checks if the current cell is not in the rightmost column of the grid.
-            uint8_t &right = (j < 2) ? propagation_grid[i][j + 1] : propagation_grid[i][j];
+            // Toroidal neighbor assignments
+            // Using + 3 and % 3 to move in a toroidal manner
+            uint8_t &up = propagation_grid[(i - 1 + 3) % 3][j];
+            uint8_t &down = propagation_grid[(i + 1) % 3][j];
+            uint8_t &left = propagation_grid[i][(j - 1 + 3) % 3];
+            uint8_t &right = propagation_grid[i][(j + 1) % 3];
 
             uint8_t temp = center;
             propagate(temp, up, down, left, right);
