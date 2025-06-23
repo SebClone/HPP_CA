@@ -2,11 +2,28 @@
 #include <cstdint> // für uint8_t
 #include <bitset>  // für std::bitset
 
+// ----------------------------------------------
+// Custom functions for printing bits and grid
+// ----------------------------------------------
 void printBits(uint8_t value)
 {
     std::bitset<8> bits(value);
     std::cout << bits;
 }
+
+void printGrid(uint8_t grid[3][3])
+{
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            printBits(grid[i][j]);
+            std::cout << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+// ----------------------------------------------
 
 uint8_t collision(uint8_t current_cell)
 {
@@ -99,40 +116,86 @@ uint8_t reflection(uint8_t current_cell)
 
 int main()
 {
+    // ----------------------------------------------
+    // Initialization of the grid
     // Grid layout (3x3): each entry is a cell with bits: xxxknosw
+    // ----------------------------------------------
     uint8_t grid[3][3] = {
-        {0b00000000, 0b00000000, 0b00000000},
-        {0b00000000, 0b00001111, 0b00000000},
-        {0b00000000, 0b00010000, 0b00000000}};
+        {0b00000010, 0b00000000, 0b00000000},
+        {0b00001000, 0b00001111, 0b00000000},
+        {0b00000000, 0b00010000, 0b00001010}};
 
-    std::cout << "Inital state of the center cell: ";
-    printBits(grid[1][1]);
-    std::cout << std::endl;
+    // Print the initial grid
+    std::cout << "Initial Grid:" << std::endl;
+    printGrid(grid);
 
+    // ----------------------------------------------
     // Simulate collision
-    grid[1][1] = collision(grid[1][1]);
-    propagate(grid[1][1], grid[0][1], grid[2][1], grid[1][0], grid[1][2]);
-    uint8_t down_reflection = reflection(grid[2][1]);
+    // Collision is applied to each cell in the grid
 
-    std::cout << "State of the center cell after propagation: ";
-    printBits(grid[1][1]);
-    std::cout << std::endl;
-    std::cout << "State of the up cell after propagation: ";
-    printBits(grid[0][1]);
-    std::cout << std::endl;
-    std::cout << "State of the down cell after propagation: ";
-    printBits(grid[2][1]);
-    std::cout << std::endl;
-    std::cout << "State of the left cell after propagation: ";
-    printBits(grid[1][0]);
-    std::cout << std::endl;
-    std::cout << "State of the right cell after propagation: ";
-    printBits(grid[1][2]);
-    std::cout << std::endl;
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            grid[i][j] = collision(grid[i][j]);
+        }
+    }
+    // Print the grid after collision
+    std::cout << "Grid after collision:" << std::endl;
+    printGrid(grid);
 
-    std::cout << "State of the down cell after reflection: ";
-    printBits(down_reflection);
-    std::cout << std::endl;
+    // ----------------------------------------------
+    // propagate the particles
+    // ----------------------------------------------
+    uint8_t propagation_grid[3][3] = {0}; // Initialize a new grid to store the propagated values
+
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            // Check wehter there is a next cell to propagate to
+            uint8_t &center = grid[i][j]; // current center cell
+
+            // Checks if the current cell is not in the top row of the grid. If it is, it uses the current cell itself to avoid out-of-bounds access.
+            uint8_t &up = (i > 0) ? propagation_grid[i - 1][j] : propagation_grid[i][j];
+            // Checks if the current cell is on the bottom row of the grid
+            uint8_t &down = (i < 2) ? propagation_grid[i + 1][j] : propagation_grid[i][j];
+            // Checks if the current cell is not in the leftmost column of the grid.
+            uint8_t &left = (j > 0) ? propagation_grid[i][j - 1] : propagation_grid[i][j];
+            // Checks if the current cell is not in the rightmost column of the grid.
+            uint8_t &right = (j < 2) ? propagation_grid[i][j + 1] : propagation_grid[i][j];
+
+            uint8_t temp = center;
+            propagate(temp, up, down, left, right);
+            propagation_grid[i][j] |= temp; // Not prpagatet particals will remain in the gird and not be deleted
+        }
+    }
+
+    // Copy the propagated values back to the original grid
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            grid[i][j] = propagation_grid[i][j];
+        }
+    }
+    // Print the grid after propagation
+    std::cout << "Grid after propagation:" << std::endl;
+    printGrid(grid);
+
+    // ----------------------------------------------
+    // Reflect the particles in the grid
+    // ----------------------------------------------
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            grid[i][j] = reflection(grid[i][j]);
+        }
+    }
+    // Print the grid after reflection
+    std::cout << "Grid after reflection:" << std::endl;
+    printGrid(grid);
 
     return 0;
 }
