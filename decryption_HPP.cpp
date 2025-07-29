@@ -5,6 +5,7 @@
 #include <fstream>
 #include <vector>
 #include <random>
+#include "HPP_lib.hpp" // Include the header file for function declarations
 
 const int num_itterations = 1; // Number of iterations for the simulation
 
@@ -153,7 +154,7 @@ void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filena
 // @param grid The 2D grid to modify (walls are set in-place).
 // @param wall_ratio Probability of a cell becoming a wall (default 0.1).
 // @param seed RNG seed (default: random_device).
-void generateRandomWallMask(std::vector<std::vector<uint8_t>> &grid, double wall_ratio = 0.1, uint32_t seed = std::random_device{}())
+void generateRandomWallMask(std::vector<std::vector<uint8_t>> &grid, double wall_ratio, uint32_t seed)
 {
     std::mt19937 rng(seed);                                // Mersenne Twister RNG seeded with 'seed'
     std::uniform_real_distribution<double> dist(0.0, 1.0); // Uniform distribution [0,1)
@@ -406,175 +407,14 @@ uint8_t inverse_collision(uint8_t current_cell)
 {
     return collision(current_cell); // Inverse collision is the same as collision
 }
+// ----------------------------------------------
 
 int main()
 {
     // ----------------------------------------------
-    // Simulation of the ENCRYPTION operations
-    // ----------------------------------------------
-    {
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Load Text-File" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-        std::string filename = "message.txt";
-        std::vector<uint8_t> fileData = readFileBytes(filename); // Read file as binary data
-
-        std::cout << "Read " << fileData.size() << " bytes from " << filename << std::endl;
-
-        // Reshape the data into a grid
-        std::cout << "Reshaping data into a grid..." << std::endl;
-        int grid_size;
-        std::vector<std::vector<uint8_t>> grid = reshapeToMatrix(fileData, grid_size);
-
-        // REMOVE
-        std::cout << "Reshaped Matrix (" << grid_size << "x" << grid_size << "):" << std::endl;
-        for (const auto &row : grid)
-        {
-            for (const auto &cell : row)
-            {
-                printBits(cell);
-                std::cout << " ";
-            }
-            std::cout << std::endl;
-        }
-
-        // Generate a random wall mask and save it to a binary file
-        std::cout << "Generating random wall mask..." << std::endl;
-        std::cout << "This will set ~10% of the grid cells to walls." << std::endl;
-        generateRandomWallMask(grid, 0.1); // ~10% of grid cells become walls
-        std::cout << "Saving wall mask to binary file..." << std::endl;
-        saveWallMaskBinary(grid, "wall_mask.key");
-        std::cout << "Saved wall mask to 'wall_mask.key'" << std::endl;
-
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "HPP-Algorithm" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        std::cout << "Number of iterations: " << num_itterations << std::endl;
-        std::cout << "Grid size:" << grid_size << "x" << grid_size << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        // ----------------------------------------------
-        // Initialization of the grid
-        // Grid layout (grid_sizexgrid_size): each entry is a cell with bits: xxxknesw
-        // ----------------------------------------------
-
-        // Print the initial grid
-        std::cout << "Initial Grid:" << std::endl;
-        printGrid(grid);
-
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Encrypting message..." << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        for (int r = 0; r < num_itterations; ++r)
-        {
-            std::cout << "----------------------------------------------" << std::endl;
-            std::cout << "Iteration: " << r << std::endl;
-            std::cout << std::endl;
-            std::cout << "Grid by iteration " << r << std::endl;
-            printGrid(grid);
-            std::cout << "----------------------------------------------" << std::endl;
-            // ----------------------------------------------
-            // Simulate collision
-            // Collision is applied to each cell in the grid
-            std::cout << "Simulating collision..." << std::endl;
-            std::cout << std::endl;
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = collision(grid[i][j]);
-                }
-            }
-            // Print the grid after collision
-            std::cout << "Grid after collision:" << std::endl;
-            printGrid(grid);
-            std::cout << std::endl;
-
-            // ----------------------------------------------
-            // propagate the particles
-            // ----------------------------------------------
-            std::vector<std::vector<uint8_t>> propagation_grid(grid_size, std::vector<uint8_t>(grid_size, 0)); // Initialize a new grid to store the propagated values
-            std::cout << "Propagating particles..." << std::endl;
-            std::cout << std::endl;
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    // Check wehter there is a next cell to propagate to
-                    uint8_t &center = grid[i][j]; // current center cell
-
-                    // Toroidal neighbor assignments
-                    // Using + grid_size and % grid_size to move in a toroidal manner
-                    uint8_t &up = propagation_grid[(i - 1 + grid_size) % grid_size][j];
-                    uint8_t &down = propagation_grid[(i + 1) % grid_size][j];
-                    uint8_t &left = propagation_grid[i][(j - 1 + grid_size) % grid_size];
-                    uint8_t &right = propagation_grid[i][(j + 1) % grid_size];
-
-                    uint8_t temp = center;
-                    propagate(temp, up, down, left, right);
-                    propagation_grid[i][j] |= temp; // Not prpagatet particals will remain in the gird and not be deleted
-                }
-            }
-
-            // Copy the propagated values back to the original grid
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = propagation_grid[i][j];
-                }
-            }
-            // Print the grid after propagation
-            std::cout << "Grid after propagation:" << std::endl;
-            printGrid(grid);
-            std::cout << std::endl;
-
-            // ----------------------------------------------
-            // Reflect the particles in the grid
-            // ----------------------------------------------
-            std::cout << "Reflecting particles..." << std::endl;
-            std::cout << std::endl;
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = reflection(grid[i][j]);
-                }
-            }
-            // Print the grid after reflection
-            std::cout << "Grid after reflection:" << std::endl;
-            printGrid(grid);
-            std::cout << std::endl;
-            std::cout << "End of iteration " << r << std::endl;
-            std::cout << "----------------------------------------------" << std::endl;
-        }
-
-        // ----------------------------------------------
-        // Save encrypted grid as ASCII text
-        // ----------------------------------------------
-        std::cout << "Saving final grid to ASCII text file..." << std::endl;
-        std::vector<uint8_t> encrypted_data = flattenMatrix(grid); // Flatten the 2D grid
-
-        // Strip wall bit (bit 4) before saving
-        for (uint8_t &byte : encrypted_data)
-        {
-            byte &= 0b11101111; // Clear bit 4 (wall bit)
-        }
-
-        saveAsAsciiText(encrypted_data, "encrypted_message.txt"); // Save as ASCII text
-        std::cout << "Saved reconstructed ASCII file as 'encrypted_message.txt'" << std::endl;
-    }
-
-    // ----------------------------------------------
     // Simulation of the DECRYPTION operations
     // ----------------------------------------------
     {
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Inverse algorithm " << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
         std::cout << "----------------------------------------------" << std::endl;
         std::cout << "Load encrypted text-file" << std::endl;
         std::cout << "----------------------------------------------" << std::endl;

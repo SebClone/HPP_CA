@@ -33,7 +33,7 @@ uint8_t Bit = xxxxxxxx
         e.g. uint8_t Bit = xxxx|1111    North-East-South-West
     >   The cellular automata is an NxN-matrix where each element of the matrix corresponds to an cell that looks like this e.g. uint8_t Bit = xxxx|1111    North-East-South-West. So each cell can have an obstacle/wall and one of each partical type
 
-Kollision:
+Collision:
     -   When two particals collide frontal so (W)->  <-(E) then they change their directions to (N) and (S)
         The state transition would look like this: 
         e.g. uint8_t Bit = xxx0|1010    North-South ------> e.g. uint8_t Bit = xxx0|0101    East-West
