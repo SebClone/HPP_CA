@@ -1,9 +1,10 @@
 #include <iostream>
 #include <cstdint> // für uint8_t
 #include <bitset>  // für std::bitset
+#include <cstring> // for memcpy
 
 const int grid_size = 3;
-const int num_itterations = 3; // Number of iterations for the simulation
+const int num_itterations = 1; // Number of iterations for the simulation
 
 // ----------------------------------------------
 // Custom functions for printing bits and grid
@@ -28,6 +29,9 @@ void printGrid(uint8_t grid[grid_size][grid_size])
 }
 // ----------------------------------------------
 
+// ----------------------------------------------
+// Forward declarations of functions
+// ----------------------------------------------
 uint8_t collision(uint8_t current_cell)
 {
     // Skip collision if the cell contains a wall
@@ -115,6 +119,51 @@ uint8_t reflection(uint8_t current_cell)
     }
 
     return reflected_cell;
+}
+
+// ----------------------------------------------
+// Backward declarations of functions
+// ----------------------------------------------
+
+uint8_t inverse_reflection(uint8_t current_cell)
+{
+    return reflection(current_cell); // Inverse reflection is the same as reflection
+}
+
+void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &left, uint8_t &right)
+{
+    // North particle came from DOWN cell (i.e., came up)
+    if (down & 0b00001000)
+    {
+        center |= 0b00001000;
+        down &= ~0b00001000;
+    }
+
+    // South particle came from UP cell (i.e., came down)
+    if (up & 0b00000010)
+    {
+        center |= 0b00000010;
+        up &= ~0b00000010;
+    }
+
+    // East particle came from LEFT
+    if (left & 0b00000100)
+    {
+        center |= 0b00000100;
+        left &= ~0b00000100;
+    }
+
+    // West particle came from RIGHT
+    if (right & 0b00000001)
+    {
+        center |= 0b00000001;
+        right &= ~0b00000001;
+    }
+}
+
+uint8_t inverse_collision(uint8_t current_cell)
+{
+    return collision(current_cell); // Inverse collision is the same as collision
 }
 
 int main()
@@ -223,6 +272,96 @@ int main()
         printGrid(grid);
         std::cout << std::endl;
         std::cout << "End of iteration " << r << std::endl;
+        std::cout << "----------------------------------------------" << std::endl;
+    }
+
+    // ----------------------------------------------
+    // Simulation of the inverse operations
+    // ----------------------------------------------
+    for (int r = 0; r < num_itterations; ++r)
+    {
+        std::cout << "----------------------------------------------" << std::endl;
+        std::cout << "Inverse algorithm " << std::endl;
+        std::cout << "----------------------------------------------" << std::endl;
+
+        std::cout << "----------------------------------------------" << std::endl;
+        std::cout << "Inverse Iteration: " << r << std::endl;
+        std::cout << std::endl;
+        std::cout << "Grid by iteration " << r << std::endl;
+        printGrid(grid);
+        std::cout << "----------------------------------------------" << std::endl;
+        // ----------------------------------------------
+        // Reflect the particles in the grid
+        // ----------------------------------------------
+        std::cout << "Reflecting particles..." << std::endl;
+        std::cout << std::endl;
+        for (int i = 0; i < grid_size; ++i)
+        {
+            for (int j = 0; j < grid_size; ++j)
+            {
+                grid[i][j] = inverse_reflection(grid[i][j]);
+            }
+        }
+        // Print the grid after reflection
+        std::cout << "Grid after reflection:" << std::endl;
+        printGrid(grid);
+
+        // ----------------------------------------------
+        // propagate the particles
+        // ----------------------------------------------
+        uint8_t propagation_grid[grid_size][grid_size] = {0}; // Initialize a new grid to store the propagated values
+        std::cout << "Propagating particles..." << std::endl;
+        std::cout << std::endl;
+
+        uint8_t original_grid[grid_size][grid_size];
+        memcpy(original_grid, grid, sizeof(grid));
+
+        for (int i = 0; i < grid_size; ++i)
+        {
+            for (int j = 0; j < grid_size; ++j)
+            {
+                uint8_t &center = propagation_grid[i][j];
+
+                uint8_t &down = original_grid[(i - 1 + grid_size) % grid_size][j];  // north particle comes from below
+                uint8_t &up = original_grid[(i + 1) % grid_size][j];                // south from above
+                uint8_t &right = original_grid[i][(j - 1 + grid_size) % grid_size]; // east from left
+                uint8_t &left = original_grid[i][(j + 1) % grid_size];              // west from right
+
+                inverse_propagate(center, up, down, left, right);
+            }
+        }
+
+        // Copy the propagated values back to the original grid
+        for (int i = 0; i < grid_size; ++i)
+        {
+            for (int j = 0; j < grid_size; ++j)
+            {
+                grid[i][j] = propagation_grid[i][j];
+            }
+        }
+        // Print the grid after propagation
+        std::cout << "Grid after propagation:" << std::endl;
+        printGrid(grid);
+        std::cout << std::endl;
+
+        // ----------------------------------------------
+        // Simulate collision
+        // Collision is applied to each cell in the grid
+        std::cout << "Simulating collision..." << std::endl;
+        std::cout << std::endl;
+        for (int i = 0; i < grid_size; ++i)
+        {
+            for (int j = 0; j < grid_size; ++j)
+            {
+                grid[i][j] = inverse_collision(grid[i][j]);
+            }
+        }
+        // Print the grid after collision
+        std::cout << "Grid after collision:" << std::endl;
+        printGrid(grid);
+        std::cout << std::endl;
+        std::cout << std::endl;
+        std::cout << "End of inverse iteration " << r << std::endl;
         std::cout << "----------------------------------------------" << std::endl;
     }
 
