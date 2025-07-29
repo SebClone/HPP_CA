@@ -13,6 +13,9 @@ const int num_itterations = 10; // Number of iterations for the simulation
 // ----------------------------------------------
 // Prints the 8-bit binary representation of a uint8_t value to std::cout.
 // Used for debugging to visualize the bit pattern of a cell.
+// Prints the 8-bit binary representation of a uint8_t value to std::cout.
+// Used for debugging to visualize the bit pattern of a cell.
+// @param value The 8-bit value to print as a binary string.
 void printBits(uint8_t value)
 {
     std::bitset<8> bits(value);
@@ -22,6 +25,10 @@ void printBits(uint8_t value)
 // Prints the entire 2D grid, showing the bit pattern for each cell.
 // Each cell is displayed as 8 bits, separated by spaces.
 // Used for debugging and visualization.
+// Prints the entire 2D grid, showing the bit pattern for each cell.
+// Each cell is displayed as 8 bits, separated by spaces.
+// Used for debugging and visualization.
+// @param grid The 2D grid to print.
 void printGrid(const std::vector<std::vector<uint8_t>> &grid)
 {
     for (const auto &row : grid)
@@ -36,6 +43,9 @@ void printGrid(const std::vector<std::vector<uint8_t>> &grid)
 }
 
 // Reads a file as an binary and returns its contents as a vector of bytes
+// Reads the contents of a file as binary data and returns it as a vector of bytes.
+// @param filename Name of the file to read.
+// @return Vector containing the bytes read from the file.
 // Reads the contents of a file as binary data and returns it as a vector of bytes.
 // @param filename Name of the file to read.
 // @return Vector containing the bytes read from the file.
@@ -70,6 +80,11 @@ std::vector<uint8_t> readFileBytes(const std::string &filename)
 // @param data The input 1D vector of bytes.
 // @param grid_size (output) The resulting size of the square grid (number of rows/cols).
 // @return 2D vector (grid_size x grid_size) containing the data.
+// Reshapes a 1D vector of bytes into a square 2D grid.
+// Pads with zeros if the data does not fit perfectly into a square.
+// @param data The input 1D vector of bytes.
+// @param grid_size (output) The resulting size of the square grid (number of rows/cols).
+// @return 2D vector (grid_size x grid_size) containing the data.
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, int &grid_size)
 {
     size_t originalSize = data.size();
@@ -81,7 +96,6 @@ std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &da
     // Copy and pad the data with 0s if needed
     std::vector<uint8_t> padded = data;
     padded.resize(paddedSize, 0);
-How 
     // Fill a 2D matrix with the padded data
     std::vector<std::vector<uint8_t>> matrix(grid_size, std::vector<uint8_t>(grid_size));
     for (size_t i = 0; i < paddedSize; ++i)
@@ -94,6 +108,9 @@ How
 // ----------------------------------------------
 
 // Flattens a 2D matrix back into a 1D vector
+// Flattens a 2D grid (matrix) into a 1D vector of bytes in row-major order.
+// @param matrix The 2D grid to flatten.
+// @return Vector containing the flattened data.
 // Flattens a 2D grid (matrix) into a 1D vector of bytes in row-major order.
 // @param matrix The 2D grid to flatten.
 // @return Vector containing the flattened data.
@@ -111,6 +128,10 @@ std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matr
 }
 
 // Saves a vector of bytes as an ASCII text file
+// Saves a vector of bytes as an ASCII text file.
+// Each byte is written as a character.
+// @param data The data to write.
+// @param filename The output file name.
 // Saves a vector of bytes as an ASCII text file.
 // Each byte is written as a character.
 // @param data The data to write.
@@ -136,7 +157,12 @@ void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filena
 // Wall Bits Mask Functions
 // ----------------------------------------------
 
-
+// Generates a random wall mask for the grid.
+// Each cell has a probability `wall_ratio` of being a wall.
+// @param grid_size Size of one dimension of the square grid.
+// @param wall_ratio Fraction of cells to be set as walls (default: 0.1).
+// @param seed Random seed for reproducibility.
+// @return 2D vector of bools indicating wall positions.
 std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall_ratio = 0.1, uint32_t seed = std::random_device{}())
 {
     std::mt19937 rng(seed);
@@ -161,7 +187,10 @@ std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall
     return wall_mask;
 }
 
-
+// Saves a wall mask as a binary file.
+// Each cell is written as a single byte (1 for wall, 0 for no wall).
+// @param wall_mask The 2D boolean wall mask to save.
+// @param filename The output file name.
 void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const std::string &filename)
 {
     std::ofstream file(filename, std::ios::binary);
@@ -181,6 +210,10 @@ void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const s
     }
 }
 
+// Loads a wall mask from a binary file.
+// @param grid_size Size of one dimension of the square grid.
+// @param filename The file to load from.
+// @return 2D boolean wall mask.
 std::vector<std::vector<bool>> loadWallMaskBinary(int grid_size, const std::string &filename)
 {
     std::vector<std::vector<bool>> wall_mask(grid_size, std::vector<bool>(grid_size, false));
@@ -208,6 +241,11 @@ std::vector<std::vector<bool>> loadWallMaskBinary(int grid_size, const std::stri
 // Forward declarations of functions
 // ----------------------------------------------
 
+// Applies HPP collision rules to a cell, unless it is a wall.
+// If the cell is a wall, returns the cell unchanged.
+// @param current_cell The cell value to process.
+// @param is_wall True if the cell is a wall.
+// @return The new cell value after collision.
 uint8_t collision(uint8_t current_cell, bool is_wall)
 {
     if (is_wall)
@@ -223,6 +261,14 @@ uint8_t collision(uint8_t current_cell, bool is_wall)
     return current_cell;
 }
 
+// Propagates particles from the center cell to its neighbors according to HPP rules.
+// Moves N, E, S, W particles from center to up, right, down, left, respectively.
+// The moved particles are cleared from the center.
+// @param center The center cell (by reference, particles are removed).
+// @param up The cell above (by reference, receives N particles).
+// @param down The cell below (by reference, receives S particles).
+// @param left The cell to the left (by reference, receives W particles).
+// @param right The cell to the right (by reference, receives E particles).
 // Propagates particles from the center cell to its neighbors according to HPP rules.
 // Moves N, E, S, W particles from center to up, right, down, left, respectively.
 // The moved particles are cleared from the center.
@@ -259,7 +305,11 @@ void propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &left, uint8
     }
 }
 
-
+// Reflects particles in a cell if it is a wall.
+// Swaps N<->S and E<->W particles for wall cells; otherwise returns cell unchanged.
+// @param current_cell The cell value to reflect.
+// @param is_wall True if the cell is a wall.
+// @return The new cell value after reflection.
 uint8_t reflection(uint8_t current_cell, bool is_wall)
 {
     if (!is_wall)
@@ -283,12 +333,22 @@ uint8_t reflection(uint8_t current_cell, bool is_wall)
 // Backward declarations of functions
 // ----------------------------------------------
 
-
+// Inverse of the reflection operation (identical for this model).
+// @param current_cell The cell value to reflect.
+// @param is_wall True if the cell is a wall.
+// @return The new cell value after inverse reflection.
 uint8_t inverse_reflection(uint8_t current_cell, bool is_wall)
 {
     return reflection(current_cell, is_wall);
 }
 
+// Inverse of the propagate operation.
+// Reconstructs the center cell's particles by collecting them from the neighbors.
+// @param center The center cell (by reference, particles are added).
+// @param up The cell above (by reference, provides S particles).
+// @param down The cell below (by reference, provides N particles).
+// @param left The cell to the left (by reference, provides E particles).
+// @param right The cell to the right (by reference, provides W particles).
 // Inverse of the propagate operation.
 // Reconstructs the center cell's particles by collecting them from the neighbors.
 // @param center The center cell (by reference, particles are added).
@@ -327,11 +387,18 @@ void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &lef
     }
 }
 
+// Inverse of the collision operation (identical for this model).
+// @param current_cell The cell value to process.
+// @param is_wall True if the cell is a wall.
+// @return The new cell value after inverse collision.
 uint8_t inverse_collision(uint8_t current_cell, bool is_wall)
 {
     return collision(current_cell, is_wall);
 }
 
+// Main entry point for the HPP encryption and decryption simulation.
+// Loads input, performs encryption and decryption using HPP CA rules, and saves results.
+// @return 0 on successful completion.
 int main()
 {
     // ----------------------------------------------
