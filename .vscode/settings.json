@@ -86,6 +86,7 @@
         "utility": "cpp",
         "numbers": "cpp",
         "ostream": "cpp",
-        "cinttypes": "cpp"
+        "cinttypes": "cpp",
+        "map": "cpp"
     }
 }
