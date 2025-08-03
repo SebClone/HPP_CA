@@ -1,4 +1,4 @@
-CXX       = g++
+CXX       = mpic++ # Für MPI Einbindung
 CXXFLAGS  = -std=c++17 -O2
 
 SRCS      = main.cpp hpp_encryptor.cpp
@@ -10,7 +10,7 @@ TARGET    = encryptor
 all: $(TARGET)
 
 run: $(TARGET)
-	@./$(TARGET)
+	@mpirun -np 4 ./$(TARGET)   # hier mpirun zum Starten
 
 $(TARGET): $(OBJS)
 	$(CXX) $(OBJS) -o $(TARGET)

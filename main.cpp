@@ -1,14 +1,14 @@
 #include "hpp_encryptor.hpp"
 
-constexpr int NUM_ITERATIONS = 10;
+constexpr int NUM_ITERATIONS = 1000;
 
 int main()
 {
     bool doEncrypt       = true;   
     bool doDecrypt       = true; 
     bool visualize       = false;  
-    bool printEncrypted  = false;
-    bool printDecrypted  = false;
+    bool printEncrypted  = true;
+    bool printDecrypted  = true;
 
     if (!doEncrypt && !doDecrypt) 
     {

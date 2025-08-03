@@ -281,3 +281,17 @@ uint8_t inverse_collision(uint8_t current_cell, bool is_wall)
 {
     return collision(current_cell, is_wall);
 }
+
+/*
+    *-------------------------------------------------------
+    * Functions for MPI communication
+    * -------------------------------------------------------
+*/
+
+void broadcastMask(Mask& mask, MPI_Comm comm) {
+    int grid_size = mask.size();
+    MPI_Bcast(&grid_size, 1, MPI_INT, 0, comm);
+    for (int i = 0; i < grid_size; ++i) {
+        MPI_Bcast(mask[i].data(), grid_size, MPI_BYTE, 0, comm);
+    }
+}

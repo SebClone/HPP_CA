@@ -10,6 +10,7 @@
 #include <fstream>
 #include <vector>
 #include <random>
+#include <mpi.h>
 
 
 //Darstellen der Ergebnisse
@@ -38,5 +39,8 @@ uint8_t reflection(uint8_t current_cell, bool is_wall);
 uint8_t inverse_reflection(uint8_t current_cell, bool is_wall);
 void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &left, uint8_t &right);
 uint8_t inverse_collision(uint8_t current_cell, bool is_wall);
+
+// MPI-Kommunikation
+void broadcastMask(Mask& mask, MPI_Comm comm) 
 
 #endif 
