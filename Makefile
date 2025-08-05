@@ -1,22 +1,28 @@
-CXX       = mpic++ # Für MPI Einbindung
-CXXFLAGS  = -std=c++17 -O2
+NPROCS ?= $(shell getconf _NPROCESSORS_ONLN)
 
-SRCS      = main.cpp hpp_encryptor.cpp
-OBJS      = $(SRCS:.cpp=.o)
-TARGET    = encryptor
+BUILD ?= seq
+
+ifeq ($(BUILD),par)
+  CXX     := mpicxx
+  SRC     := main_parallel.cpp
+  RUN_CMD := mpirun -np $(NPROCS) ./encrypt
+else
+  CXX     := g++
+  SRC     := main.cpp
+  RUN_CMD := ./encrypt
+endif
+
+CXXFLAGS := -O3 -std=c++17
 
 .PHONY: all run clean
+all: encrypt
 
-all: $(TARGET)
+encrypt:
+	$(CXX) $(CXXFLAGS) $(SRC) -o encrypt
 
-run: $(TARGET)
-	@mpirun -np 4 ./$(TARGET)   # hier mpirun zum Starten
-
-$(TARGET): $(OBJS)
-	$(CXX) $(OBJS) -o $(TARGET)
-
-%.o: %.cpp hpp_encryptor.hpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+run: encrypt
+	@echo "Running with BUILD=$(BUILD), NPROCS=$(NPROCS)"
+	$(RUN_CMD)
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f encrypt

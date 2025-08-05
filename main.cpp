@@ -49,7 +49,7 @@ int main()
 
         std::cout << "Generating random wall mask..." << std::endl;
         std::cout << "This will set ~10% of the grid cells to walls." << std::endl;
-        std::vector<std::vector<bool>> wall_mask = generateRandomWallMask(grid_size, 0.1);
+        Mask wall_mask = generateRandomWallMask(grid_size, 0.1);
         std::cout << "Saving wall mask to binary file..." << std::endl;
         saveWallMaskBinary(wall_mask, "wall_mask.key");
         std::cout << "Saved wall mask to 'wall_mask.key'" << std::endl;
@@ -222,7 +222,7 @@ int main()
         }
 
         std::cout << "Load wall mask... " << NUM_ITERATIONS << std::endl;
-        std::vector<std::vector<bool>> wall_mask = loadWallMaskBinary(grid_size, "wall_mask.key");
+        Mask wall_mask = loadWallMaskBinary(grid_size, "wall_mask.key");
         std::cout << "Loaded wall mask from 'wall_mask.key'" << std::endl;
 
         std::cout << "----------------------------------------------" << std::endl;

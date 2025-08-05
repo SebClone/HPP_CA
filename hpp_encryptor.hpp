@@ -28,9 +28,10 @@ std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matr
 void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filename);
 
 // Wall-Masken
-std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall_ratio = 0.1, uint32_t seed = std::random_device{}());
-void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const std::string &filename);
-std::vector<std::vector<bool>> loadWallMaskBinary(int grid_size, const std::string &filename);
+using Mask = std::vector<std::vector<uint8_t>>;
+Mask generateRandomWallMask(int grid_size, double wall_ratio = 0.1, uint32_t seed = std::random_device{}());
+void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename);
+Mask loadWallMaskBinary(int grid_size, const std::string &filename);
 
 // Particle-Kollision & -Propagation
 uint8_t collision(uint8_t current_cell, bool is_wall);
@@ -41,6 +42,9 @@ void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &lef
 uint8_t inverse_collision(uint8_t current_cell, bool is_wall);
 
 // MPI-Kommunikation
-void broadcastMask(Mask& mask, MPI_Comm comm) 
+using Matrix = std::vector<std::vector<uint8_t>>;
+void broadcastMask(const Mask &mask, MPI_Comm comm);
+void applyRules(Matrix& grid, const Mask& wall_mask,bool forward, int row,int col);
 
 #endif 
+

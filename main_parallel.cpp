@@ -2,6 +2,8 @@
 #include <cmath>
 #include <mpi.h>
 
+using Matrix = std::vector<std::vector<uint8_t>>;
+
 /*
     * Wichtige Entscheidungen:
     * Grid wurde in horizontale Streifen aufgeteilt
@@ -70,7 +72,7 @@ int main(int argc, char** argv)
         for (int j = 0; j < grid_size; ++j)
             localGrid[i+1][j] = local_core[i*grid_size + j];
 
-    std::vector<std::vector<bool>> wall_mask = generateRandomWallMask(grid_size, 0.1);
+    Mask wall_mask = generateRandomWallMask(grid_size, 0.1);
     broadcastMask(wall_mask, MPI_COMM_WORLD);
 
     for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
@@ -85,7 +87,7 @@ int main(int argc, char** argv)
     // 2) Anwenden der Rules auf den Kernbereich (1..local_rows)
     for (int i = 1; i <= local_rows; ++i)
         for (int j = 0; j < grid_size; ++j)
-            applyRules(localGrid, wallMask, i, j);
+            applyRules(localGrid, wall_mask, true, i, j);
 
     
     // Extrahiere Kernbereich aus localGrid
@@ -106,7 +108,7 @@ int main(int argc, char** argv)
     if (rank == 0) {
         // Trimmen auf originalSize und speichern
         result.resize(originalSize);
-        saveAsAsciiText(result, outputPath);
+        saveAsAsciiText(result, "decrypted_message.txt");
     }
 
     MPI_Finalize();

@@ -103,12 +103,12 @@ void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filena
 }
 
 
-std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
+Mask generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
 {
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    std::vector<std::vector<bool>> wall_mask(grid_size, std::vector<bool>(grid_size, false));
+    Mask wall_mask(grid_size, std::vector<uint8_t>(grid_size, 0));
     int wall_count = 0;
 
     for (int i = 0; i < grid_size; ++i)
@@ -117,7 +117,7 @@ std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall
         {
             if (dist(rng) < wall_ratio)
             {
-                wall_mask[i][j] = true;
+                wall_mask[i][j] = 1;
                 wall_count++;
             }
         }
@@ -127,7 +127,7 @@ std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall
     return wall_mask;
 }
 
-void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const std::string &filename)
+void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename)
 {
     std::ofstream file(filename, std::ios::binary);
     if (!file)
@@ -138,17 +138,16 @@ void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const s
 
     for (const auto &row : wall_mask)
     {
-        for (bool wall : row)
+        for (uint8_t wall : row)
         {
-            uint8_t value = wall ? 1 : 0;
-            file.write(reinterpret_cast<char *>(&value), 1);
+            file.write(reinterpret_cast<char *>(&wall), 1);
         }
     }
 }
 
-std::vector<std::vector<bool>> loadWallMaskBinary(int grid_size, const std::string &filename)
+Mask loadWallMaskBinary(int grid_size, const std::string &filename)
 {
-    std::vector<std::vector<bool>> wall_mask(grid_size, std::vector<bool>(grid_size, false));
+    Mask wall_mask(grid_size, std::vector<uint8_t>(grid_size, 0));
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {
@@ -288,10 +287,101 @@ uint8_t inverse_collision(uint8_t current_cell, bool is_wall)
     * -------------------------------------------------------
 */
 
-void broadcastMask(Mask& mask, MPI_Comm comm) {
-    int grid_size = mask.size();
-    MPI_Bcast(&grid_size, 1, MPI_INT, 0, comm);
-    for (int i = 0; i < grid_size; ++i) {
-        MPI_Bcast(mask[i].data(), grid_size, MPI_BYTE, 0, comm);
+void broadcastMask(const Mask& mask, MPI_Comm comm) {
+    int rows = mask.size();
+    int cols = rows > 0 ? mask[0].size() : 0;
+    MPI_Bcast(&rows, 1, MPI_INT, 0, comm);
+    MPI_Bcast(&cols, 1, MPI_INT, 0, comm);
+    for (int i = 0; i < rows; ++i) {
+        MPI_Bcast(const_cast<uint8_t*>(mask[i].data()), cols, MPI_BYTE, 0, comm);
     }
 }
+
+void applyRules(std::vector<std::vector<uint8_t>>& grid, const Mask& wall_mask, bool forward)
+{
+    int grid_size = static_cast<int>(grid.size());
+
+    if (forward)
+    {
+        // 1) Collision
+        for (int i = 0; i < grid_size; ++i)
+            for (int j = 0; j < grid_size; ++j)
+                grid[i][j] = collision(grid[i][j], wall_mask[i][j]);
+
+        // 2) Propagation
+        std::vector<std::vector<uint8_t>> propagation_grid(
+            grid_size, std::vector<uint8_t>(grid_size, 0)
+        );
+        for (int i = 0; i < grid_size; ++i)
+        {
+            for (int j = 0; j < grid_size; ++j)
+            {
+                uint8_t center = grid[i][j];
+                int up_i    = (i - 1 + grid_size) % grid_size;
+                int down_i  = (i + 1) % grid_size;
+                int left_j  = (j - 1 + grid_size) % grid_size;
+                int right_j = (j + 1) % grid_size;
+
+                uint8_t temp = center;
+                uint8_t &up    = propagation_grid[up_i][j];
+                uint8_t &down  = propagation_grid[down_i][j];
+                uint8_t &left  = propagation_grid[i][left_j];
+                uint8_t &right = propagation_grid[i][right_j];
+
+                propagate(temp, up, down, left, right);
+                propagation_grid[i][j] |= temp;  // keep any particles that didn't move
+            }
+        }
+        grid = std::move(propagation_grid);
+
+        // 3) Reflection
+        for (int i = 0; i < grid_size; ++i)
+            for (int j = 0; j < grid_size; ++j)
+                grid[i][j] = reflection(grid[i][j], wall_mask[i][j]);
+    }
+    else
+    {
+        // 1) Inverse Reflection
+        for (int i = 0; i < grid_size; ++i)
+            for (int j = 0; j < grid_size; ++j)
+                grid[i][j] = inverse_reflection(grid[i][j], wall_mask[i][j]);
+
+        // 2) Inverse Propagation
+        // Keep a copy of the post-reflection state
+        std::vector<std::vector<uint8_t>> original = grid;
+        std::vector<std::vector<uint8_t>> propagation_grid(
+            grid_size, std::vector<uint8_t>(grid_size, 0)
+        );
+        for (int i = 0; i < grid_size; ++i)
+        {
+            for (int j = 0; j < grid_size; ++j)
+            {
+                uint8_t center_original = original[i][j];
+                uint8_t &center = propagation_grid[i][j];
+                // Preserve walls & other upper bits
+                center = center_original & 0b11110000;
+
+                int up_i    = (i - 1 + grid_size) % grid_size;
+                int down_i  = (i + 1) % grid_size;
+                int left_j  = (j - 1 + grid_size) % grid_size;
+                int right_j = (j + 1) % grid_size;
+
+                // Note: parameters swapped to reverse the movement
+                uint8_t &down  = original[up_i][j];     // north came from below
+                uint8_t &up    = original[down_i][j];   // south came from above
+                uint8_t &right = original[i][left_j];   // east came from left
+                uint8_t &left  = original[i][right_j];  // west came from right
+
+                inverse_propagate(center, up, down, left, right);
+            }
+        }
+        grid = std::move(propagation_grid);
+
+        // 3) Inverse Collision
+        for (int i = 0; i < grid_size; ++i)
+            for (int j = 0; j < grid_size; ++j)
+                grid[i][j] = inverse_collision(grid[i][j], wall_mask[i][j]);
+    }
+}
+
+
