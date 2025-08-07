@@ -43,8 +43,9 @@ uint8_t inverse_collision(uint8_t current_cell, bool is_wall);
 
 // MPI-Kommunikation
 using Matrix = std::vector<std::vector<uint8_t>>;
-void broadcastMask(const Mask &mask, MPI_Comm comm);
-void applyRules(Matrix& grid, const Mask& wall_mask,bool forward, int row,int col);
+void broadcastMask(Mask& mask, MPI_Comm comm);
+void copy_n_bytes(const uint8_t* src, std::size_t count, uint8_t* dst);
+uint8_t applyRules(Matrix& grid, const Mask& wall_mask,bool forward, int row,int col);
 
 #endif 
 

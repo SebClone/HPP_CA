@@ -1,15 +1,15 @@
-NPROCS ?= $(shell getconf _NPROCESSORS_ONLN)
+NPROCS ?= 6
 
 BUILD ?= seq
 
 ifeq ($(BUILD),par)
-  CXX     := mpicxx
-  SRC     := main_parallel.cpp
-  RUN_CMD := mpirun -np $(NPROCS) ./encrypt
+  CXX       := mpicxx
+  SRC       := main_parallel.cpp hpp_encryptor.cpp
+  RUN_CMD   := mpirun -np $(NPROCS) ./encrypt
 else
-  CXX     := g++
-  SRC     := main.cpp
-  RUN_CMD := ./encrypt
+  CXX       := g++
+  SRC       := main.cpp hpp_encryptor.cpp
+  RUN_CMD   := ./encrypt
 endif
 
 CXXFLAGS := -O3 -std=c++17
@@ -26,3 +26,4 @@ run: encrypt
 
 clean:
 	rm -f encrypt
+

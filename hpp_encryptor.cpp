@@ -287,100 +287,81 @@ uint8_t inverse_collision(uint8_t current_cell, bool is_wall)
     * -------------------------------------------------------
 */
 
-void broadcastMask(const Mask& mask, MPI_Comm comm) {
+void broadcastMask(Mask &mask, MPI_Comm comm) {
     int rows = mask.size();
     int cols = rows > 0 ? mask[0].size() : 0;
     MPI_Bcast(&rows, 1, MPI_INT, 0, comm);
     MPI_Bcast(&cols, 1, MPI_INT, 0, comm);
+
+    // Auf Nicht-Root: Speicher für mask anlegen
+    mask.resize(rows);
     for (int i = 0; i < rows; ++i) {
-        MPI_Bcast(const_cast<uint8_t*>(mask[i].data()), cols, MPI_BYTE, 0, comm);
+        mask[i].resize(cols);
+    }
+
+    for (int i = 0; i < rows; ++i) {
+        MPI_Bcast(mask[i].data(), cols, MPI_BYTE, 0, comm);
     }
 }
 
-void applyRules(std::vector<std::vector<uint8_t>>& grid, const Mask& wall_mask, bool forward)
+void copy_n_bytes(const uint8_t* src, std::size_t count, uint8_t* dst) {
+    for (std::size_t i = 0; i < count; ++i) {
+        dst[i] = src[i];
+    }
+}
+
+uint8_t applyRules(Matrix& grid,
+                   const Mask& wall_mask,
+                   bool forward,
+                   int row,
+                   int col)
 {
-    int grid_size = static_cast<int>(grid.size());
+    int size = static_cast<int>(grid.size());
+
+    // Indices mit Wrap-Around
+    auto wrap = [&](int x) {
+        return (x + size) % size;
+    };
+    int up_row    = wrap(row - 1);
+    int down_row  = wrap(row + 1);
+    int left_col  = wrap(col - 1);
+    int right_col = wrap(col + 1);
 
     if (forward)
     {
-        // 1) Collision
-        for (int i = 0; i < grid_size; ++i)
-            for (int j = 0; j < grid_size; ++j)
-                grid[i][j] = collision(grid[i][j], wall_mask[i][j]);
+        // 1) Kollision
+        uint8_t cell = grid[row][col];
+        uint8_t val  = collision(cell, wall_mask[row][col]);
 
         // 2) Propagation
-        std::vector<std::vector<uint8_t>> propagation_grid(
-            grid_size, std::vector<uint8_t>(grid_size, 0)
-        );
-        for (int i = 0; i < grid_size; ++i)
-        {
-            for (int j = 0; j < grid_size; ++j)
-            {
-                uint8_t center = grid[i][j];
-                int up_i    = (i - 1 + grid_size) % grid_size;
-                int down_i  = (i + 1) % grid_size;
-                int left_j  = (j - 1 + grid_size) % grid_size;
-                int right_j = (j + 1) % grid_size;
-
-                uint8_t temp = center;
-                uint8_t &up    = propagation_grid[up_i][j];
-                uint8_t &down  = propagation_grid[down_i][j];
-                uint8_t &left  = propagation_grid[i][left_j];
-                uint8_t &right = propagation_grid[i][right_j];
-
-                propagate(temp, up, down, left, right);
-                propagation_grid[i][j] |= temp;  // keep any particles that didn't move
-            }
-        }
-        grid = std::move(propagation_grid);
+        uint8_t temp = val;
+        uint8_t up    = grid[up_row][col];
+        uint8_t down  = grid[down_row][col];
+        uint8_t left  = grid[row][left_col];
+        uint8_t right = grid[row][right_col];
+        propagate(temp, up, down, left, right);
+        val = temp;
 
         // 3) Reflection
-        for (int i = 0; i < grid_size; ++i)
-            for (int j = 0; j < grid_size; ++j)
-                grid[i][j] = reflection(grid[i][j], wall_mask[i][j]);
+        val = reflection(val, wall_mask[row][col]);
+        return val;
     }
     else
     {
         // 1) Inverse Reflection
-        for (int i = 0; i < grid_size; ++i)
-            for (int j = 0; j < grid_size; ++j)
-                grid[i][j] = inverse_reflection(grid[i][j], wall_mask[i][j]);
+        uint8_t orig   = grid[row][col];
+        uint8_t center = orig & 0b11110000;
 
         // 2) Inverse Propagation
-        // Keep a copy of the post-reflection state
-        std::vector<std::vector<uint8_t>> original = grid;
-        std::vector<std::vector<uint8_t>> propagation_grid(
-            grid_size, std::vector<uint8_t>(grid_size, 0)
-        );
-        for (int i = 0; i < grid_size; ++i)
-        {
-            for (int j = 0; j < grid_size; ++j)
-            {
-                uint8_t center_original = original[i][j];
-                uint8_t &center = propagation_grid[i][j];
-                // Preserve walls & other upper bits
-                center = center_original & 0b11110000;
-
-                int up_i    = (i - 1 + grid_size) % grid_size;
-                int down_i  = (i + 1) % grid_size;
-                int left_j  = (j - 1 + grid_size) % grid_size;
-                int right_j = (j + 1) % grid_size;
-
-                // Note: parameters swapped to reverse the movement
-                uint8_t &down  = original[up_i][j];     // north came from below
-                uint8_t &up    = original[down_i][j];   // south came from above
-                uint8_t &right = original[i][left_j];   // east came from left
-                uint8_t &left  = original[i][right_j];  // west came from right
-
-                inverse_propagate(center, up, down, left, right);
-            }
-        }
-        grid = std::move(propagation_grid);
+        uint8_t up_src    = grid[down_row][col];
+        uint8_t down_src  = grid[up_row][col];
+        uint8_t left_src  = grid[row][right_col];
+        uint8_t right_src = grid[row][left_col];
+        inverse_propagate(center, up_src, down_src, left_src, right_src);
 
         // 3) Inverse Collision
-        for (int i = 0; i < grid_size; ++i)
-            for (int j = 0; j < grid_size; ++j)
-                grid[i][j] = inverse_collision(grid[i][j], wall_mask[i][j]);
+        uint8_t val = inverse_collision(center, wall_mask[row][col]);
+        return val;
     }
 }
 
