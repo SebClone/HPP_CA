@@ -141,33 +141,47 @@ int main(int argc, char **argv)
         // --------------- HIER FRAMES SAMMELN & SPEICHERN ----------------
         // Wir nehmen den "fertigen" Zustand dieser Iteration (nextGrid),
         // schneiden die Halo-Zeilen ab, gathern nach Rank 0 und speichern.
-        std::vector<uint8_t> frame_core(local_rows * grid_size);
-        for (int i = 0; i < local_rows; ++i)
+        if (iter % 5 == 0 || iter == NUM_ITERATIONS - 1)
         {
-            // nur echte Zellen (Zeilen 1..local_rows), keine Halos
-            copy_n_bytes(nextGrid[i + 1].data(),
-                         static_cast<std::size_t>(grid_size),
-                         frame_core.data() + i * grid_size);
+            if (rank == 0)
+            {
+                std::cout << "Saving frame for iteration " << iter << "...\n";
+            }
+
+            // Halo-Zeilen sind nicht Teil des Frames, nur die echten Zeilen
+            std::vector<int> sendcounts(nprocs, local_rows * grid_size);
+            std::vector<int> displs(nprocs);
+            for (int r = 0; r < nprocs; ++r)
+            {
+                displs[r] = r * local_rows * grid_size;
+            }
+            std::vector<uint8_t> frame_core(local_rows * grid_size);
+            for (int i = 0; i < local_rows; ++i)
+            {
+                // nur echte Zellen (Zeilen 1..local_rows), keine Halos
+                copy_n_bytes(nextGrid[i + 1].data(),
+                            static_cast<std::size_t>(grid_size),
+                            frame_core.data() + i * grid_size);
+            }
+
+            std::vector<uint8_t> frame;
+            if (rank == 0)
+            {
+                frame.resize(paddedSize); // kompletter grid_size x grid_size-Frame
+            }
+
+            MPI_Gatherv(frame_core.data(), local_rows * grid_size, MPI_UINT8_T,
+                        rank == 0 ? frame.data() : nullptr,
+                        rank == 0 ? sendcounts.data() : nullptr,
+                        rank == 0 ? displs.data() : nullptr,
+                        MPI_UINT8_T,
+                        0, MPI_COMM_WORLD);
+
+            if (rank == 0)
+            {
+                save_frame_bin(frame, iter); // -> frames/frame_000123.bin
+            }
         }
-
-        std::vector<uint8_t> frame;
-        if (rank == 0)
-        {
-            frame.resize(paddedSize); // kompletter grid_size x grid_size-Frame
-        }
-
-        MPI_Gatherv(frame_core.data(), local_rows * grid_size, MPI_UINT8_T,
-                    rank == 0 ? frame.data() : nullptr,
-                    rank == 0 ? sendcounts.data() : nullptr,
-                    rank == 0 ? displs.data() : nullptr,
-                    MPI_UINT8_T,
-                    0, MPI_COMM_WORLD);
-
-        if (rank == 0)
-        {
-            save_frame_bin(frame, iter); // -> frames/frame_000123.bin
-        }
-
         std::swap(current, nextGrid);
     }
 
