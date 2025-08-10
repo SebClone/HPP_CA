@@ -1,0 +1,21 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Linux-MPI",
+      "compilerPath": "/usr/bin/mpicxx",          // MPI-Wrapper als „Compiler“
+      "intelliSenseMode": "linux-gcc-x64",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "includePath": [
+        "${workspaceFolder}/**"                   // alle Projekt-Ordner
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/**"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
+}

@@ -1,8 +1,13 @@
-//Implementiert die Funktionen, die in hpp_encryptor.hpp festgelegt sind
+// Implementiert die Funktionen, die in hpp_encryptor.hpp festgelegt sind
 #include "hpp_encryptor.hpp"
 
 #include <fstream>
 #include <random>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <cstdint>
 
 void printBits(uint8_t value)
 {
@@ -48,7 +53,6 @@ std::vector<uint8_t> readFileBytes(const std::string &filename)
     return data;
 }
 
-
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, size_t &grid_size)
 {
     size_t originalSize = data.size();
@@ -70,7 +74,6 @@ std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &da
     return matrix;
 }
 
-
 std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matrix)
 {
     std::vector<uint8_t> flat;
@@ -83,7 +86,6 @@ std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matr
     }
     return flat;
 }
-
 
 void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filename)
 {
@@ -102,13 +104,40 @@ void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filena
     file.close();
 }
 
+// Speichert einen kompletten Zellautomaten-Frame als Binärdatei.
+void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
+{
+    // String-Stream, um den Dateinamen im gewünschten Format zu bauen
+    std::ostringstream oss;
+    oss << "frames/frame_" << std::setw(6) << std::setfill('0') << iter << ".bin";
 
-std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
+    std::string filename = oss.str();
+    // Öffne die Datei im Binärmodus
+    std::ofstream ofs(filename, std::ios::binary);
+
+    // Falls das Öffnen fehlschlägt, Fehlermeldung ausgeben und abbrechen
+    if (!ofs)
+    {
+        std::cerr << "ERROR: could not open file '" << filename << "' for writing.\n";
+        return;
+    }
+
+    // Schreibe den kompletten Frame als Bytes in die Datei
+    ofs.write(reinterpret_cast<const char *>(frame.data()), frame.size());
+
+    // Prüfe, ob beim Schreiben ein Fehler auftrat
+    if (!ofs)
+    {
+        std::cerr << "ERROR: failed to write frame to '" << filename << "'\n";
+    }
+}
+
+Mask generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
 {
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    std::vector<std::vector<bool>> wall_mask(grid_size, std::vector<bool>(grid_size, false));
+    Mask wall_mask(grid_size, std::vector<uint8_t>(grid_size, 0));
     int wall_count = 0;
 
     for (int i = 0; i < grid_size; ++i)
@@ -117,7 +146,7 @@ std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall
         {
             if (dist(rng) < wall_ratio)
             {
-                wall_mask[i][j] = true;
+                wall_mask[i][j] = 1;
                 wall_count++;
             }
         }
@@ -127,7 +156,7 @@ std::vector<std::vector<bool>> generateRandomWallMask(int grid_size, double wall
     return wall_mask;
 }
 
-void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const std::string &filename)
+void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename)
 {
     std::ofstream file(filename, std::ios::binary);
     if (!file)
@@ -138,17 +167,16 @@ void saveWallMaskBinary(const std::vector<std::vector<bool>> &wall_mask, const s
 
     for (const auto &row : wall_mask)
     {
-        for (bool wall : row)
+        for (uint8_t wall : row)
         {
-            uint8_t value = wall ? 1 : 0;
-            file.write(reinterpret_cast<char *>(&value), 1);
+            file.write(reinterpret_cast<char *>(&wall), 1);
         }
     }
 }
 
-std::vector<std::vector<bool>> loadWallMaskBinary(int grid_size, const std::string &filename)
+Mask loadWallMaskBinary(int grid_size, const std::string &filename)
 {
-    std::vector<std::vector<bool>> wall_mask(grid_size, std::vector<bool>(grid_size, false));
+    Mask wall_mask(grid_size, std::vector<uint8_t>(grid_size, 0));
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {
@@ -187,7 +215,6 @@ uint8_t collision(uint8_t current_cell, bool is_wall)
     return current_cell;
 }
 
-
 void propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &left, uint8_t &right)
 {
     // Propagation if its an north partical
@@ -216,7 +243,6 @@ void propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &left, uint8
     }
 }
 
-
 uint8_t reflection(uint8_t current_cell, bool is_wall)
 {
     if (!is_wall)
@@ -243,7 +269,6 @@ uint8_t inverse_reflection(uint8_t current_cell, bool is_wall)
 {
     return reflection(current_cell, is_wall);
 }
-
 
 void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &left, uint8_t &right)
 {
@@ -276,8 +301,97 @@ void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &lef
     }
 }
 
-
 uint8_t inverse_collision(uint8_t current_cell, bool is_wall)
 {
     return collision(current_cell, is_wall);
+}
+
+/*
+ *-------------------------------------------------------
+ * Functions for MPI communication
+ * -------------------------------------------------------
+ */
+
+void broadcastMask(Mask &mask, MPI_Comm comm)
+{
+    int rows = mask.size();
+    int cols = rows > 0 ? mask[0].size() : 0;
+    MPI_Bcast(&rows, 1, MPI_INT, 0, comm);
+    MPI_Bcast(&cols, 1, MPI_INT, 0, comm);
+
+    // Auf Nicht-Root: Speicher für mask anlegen
+    mask.resize(rows);
+    for (int i = 0; i < rows; ++i)
+    {
+        mask[i].resize(cols);
+    }
+
+    for (int i = 0; i < rows; ++i)
+    {
+        MPI_Bcast(mask[i].data(), cols, MPI_BYTE, 0, comm);
+    }
+}
+
+void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
+{
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        dst[i] = src[i];
+    }
+}
+
+uint8_t applyRules(Matrix &grid,
+                   const Mask &wall_mask,
+                   bool forward,
+                   int row,
+                   int col)
+{
+    int size = static_cast<int>(grid.size());
+
+    // Indices mit Wrap-Around
+    auto wrap = [&](int x)
+    {
+        return (x + size) % size;
+    };
+    int up_row = wrap(row - 1);
+    int down_row = wrap(row + 1);
+    int left_col = wrap(col - 1);
+    int right_col = wrap(col + 1);
+
+    if (forward)
+    {
+        // 1) Kollision
+        uint8_t cell = grid[row][col];
+        uint8_t val = collision(cell, wall_mask[row][col]);
+
+        // 2) Propagation
+        uint8_t temp = val;
+        uint8_t up = grid[up_row][col];
+        uint8_t down = grid[down_row][col];
+        uint8_t left = grid[row][left_col];
+        uint8_t right = grid[row][right_col];
+        propagate(temp, up, down, left, right);
+        val = temp;
+
+        // 3) Reflection
+        val = reflection(val, wall_mask[row][col]);
+        return val;
+    }
+    else
+    {
+        // 1) Inverse Reflection
+        uint8_t orig = grid[row][col];
+        uint8_t center = orig & 0b11110000;
+
+        // 2) Inverse Propagation
+        uint8_t up_src = grid[down_row][col];
+        uint8_t down_src = grid[up_row][col];
+        uint8_t left_src = grid[row][right_col];
+        uint8_t right_src = grid[row][left_col];
+        inverse_propagate(center, up_src, down_src, left_src, right_src);
+
+        // 3) Inverse Collision
+        uint8_t val = inverse_collision(center, wall_mask[row][col]);
+        return val;
+    }
 }

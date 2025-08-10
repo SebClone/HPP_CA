@@ -1,22 +1,29 @@
-CXX       = g++
-CXXFLAGS  = -std=c++17 -O2
+NPROCS ?= 6
 
-SRCS      = main.cpp hpp_encryptor.cpp
-OBJS      = $(SRCS:.cpp=.o)
-TARGET    = encryptor
+BUILD ?= seq
+
+ifeq ($(BUILD),par)
+  CXX       := mpicxx
+  SRC       := main_parallel.cpp hpp_encryptor.cpp
+  RUN_CMD   := mpirun -np $(NPROCS) ./encrypt
+else
+  CXX       := g++
+  SRC       := main.cpp hpp_encryptor.cpp
+  RUN_CMD   := ./encrypt
+endif
+
+CXXFLAGS := -O3 -std=c++17
 
 .PHONY: all run clean
+all: encrypt
 
-all: $(TARGET)
+encrypt:
+	$(CXX) $(CXXFLAGS) $(SRC) -o encrypt
 
-run: $(TARGET)
-	@./$(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CXX) $(OBJS) -o $(TARGET)
-
-%.o: %.cpp hpp_encryptor.hpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+run: encrypt
+	@echo "Running with BUILD=$(BUILD), NPROCS=$(NPROCS)"
+	$(RUN_CMD)
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f encrypt
+

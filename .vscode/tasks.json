@@ -1,29 +1,38 @@
 {
+    "version": "2.0.0",
     "tasks": [
         {
-            "type": "cppbuild",
-            "label": "C/C++: clang Aktive Datei kompilieren",
-            "command": "/usr/bin/clang",
+            "label": "build MPI",
+            "type": "shell",                            
+            "command": "mpicxx",                         // MPI-Wrapper als Compiler
             "args": [
-                "-fcolor-diagnostics",
-                "-fansi-escape-codes",
-                "-g",
-                "${file}",
+                "-std=c++17",                            
+                "-O2",                                   
+                "${file}",                               
                 "-o",
                 "${fileDirname}/${fileBasenameNoExtension}"
             ],
             "options": {
-                "cwd": "${fileDirname}"
+                "cwd": "${fileDirname}"                  
             },
-            "problemMatcher": [
-                "$gcc"
-            ],
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "detail": "Vom Debugger generierte Aufgabe."
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "run MPI",
+            "type": "shell",
+            "command": "mpirun",
+            "args": [
+                "-np", "4",                              
+                "${workspaceFolder}/encryptor"          
+            ],
+            "dependsOn": "build MPI",
+            "group": "test"
         }
-    ],
-    "version": "2.0.0"
+    ]
 }
