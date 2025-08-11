@@ -340,58 +340,115 @@ void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
     }
 }
 
-uint8_t applyRules(Matrix &grid,
-                   const Mask &wall_mask,
-                   bool forward,
-                   int row,
-                   int col)
+
+// Gekapselte Hauptlogik der HPP-Operationen
+uint8_t applyRules(
+    const Matrix& active_grid,
+    const Mask&   wall_mask,
+    bool          doEncrypt,   // true = vorwärts (Encrypt), false = rückwärts (Decrypt)
+    int           i,           // lokale Zeile im Subgitter (mit Halo): 1..local_rows
+    int           j,           // Spalte: 0..N-1
+    int           offset_rows) // globale Startzeile dieses Ranks (ohne Halo)
 {
-    int size = static_cast<int>(grid.size());
+    const int N = static_cast<int>(wall_mask.size()); // quadratisches Gitter
 
-    // Indices mit Wrap-Around
-    auto wrap = [&](int x)
+    // Globale Koordinate der Zielzelle (Zeilen über Rank, Spalten lokal im Torus)
+    const int gr = (offset_rows + (i - 1) + N) % N;
+    const int gc = j;
+
+    // Nachbarindizes (lokal & global)
+    const int iu = i - 1;           // Nachbar oben   (kommt aus Halo/Innen)
+    const int id = i + 1;           // Nachbar unten
+    const int jl = (j - 1 + N) % N; // links  (torus)
+    const int jr = (j + 1) % N;     // rechts (torus)
+
+    // Zellen laden (nur lesen!)
+    const uint8_t c  = active_grid[i ][j ];
+    const uint8_t up = active_grid[iu][j ];
+    const uint8_t dn = active_grid[id][j ];
+    const uint8_t lf = active_grid[i ][jl];
+    const uint8_t rt = active_grid[i ][jr];
+
+    // Wand-Flags (Maske ist uint8_t → nonzero == true)
+    const bool w_c  = wall_mask[gr][gc] != 0;
+    const bool w_up = wall_mask[(gr - 1 + N) % N][gc] != 0;
+    const bool w_dn = wall_mask[(gr + 1) % N][gc]     != 0;
+    const bool w_lf = wall_mask[gr][jl]               != 0;
+    const bool w_rt = wall_mask[gr][jr]               != 0;
+
+    if (doEncrypt)
     {
-        return (x + size) % size;
-    };
-    int up_row = wrap(row - 1);
-    int down_row = wrap(row + 1);
-    int left_col = wrap(col - 1);
-    int right_col = wrap(col + 1);
+        // ---------- VORWÄRTS: collision -> propagate (in diese Zielzelle sammeln) -> reflection ----------
 
-    if (forward)
-    {
-        // 1) Kollision
-        uint8_t cell = grid[row][col];
-        uint8_t val = collision(cell, wall_mask[row][col]);
+        // 1) collision auf Zentrum + Nachbarn
+        const uint8_t c_col  = collision(c , w_c );
+        const uint8_t up_col = collision(up, w_up);
+        const uint8_t dn_col = collision(dn, w_dn);
+        const uint8_t lf_col = collision(lf, w_lf);
+        const uint8_t rt_col = collision(rt, w_rt);
 
-        // 2) Propagation
-        uint8_t temp = val;
-        uint8_t up = grid[up_row][col];
-        uint8_t down = grid[down_row][col];
-        uint8_t left = grid[row][left_col];
-        uint8_t right = grid[row][right_col];
-        propagate(temp, up, down, left, right);
-        val = temp;
+        // 2) "propagation" in diese Zelle:
+        //    obere 4 Bits vom Zentrum behalten, Richtungsbits aus kollidierten Nachbarn einsammeln
+        uint8_t next = static_cast<uint8_t>(c_col & 0b11110000);
 
-        // 3) Reflection
-        val = reflection(val, wall_mask[row][col]);
-        return val;
+        if (up_col & 0b00000010) next |= 0b00000010; // von oben kommt dessen SOUTH
+        if (dn_col & 0b00001000) next |= 0b00001000; // von unten kommt dessen NORTH
+        if (lf_col & 0b00000100) next |= 0b00000100; // von links kommt dessen EAST
+        if (rt_col & 0b00000001) next |= 0b00000001; // von rechts kommt dessen WEST
+
+        // 3) reflection auf der Zielzelle
+        return reflection(next, w_c);
     }
     else
     {
-        // 1) Inverse Reflection
-        uint8_t orig = grid[row][col];
-        uint8_t center = orig & 0b11110000;
+        // ---------- RÜCKWÄRTS: inverse_reflection -> inverse_propagate (sammeln) -> inverse_collision ----------
 
-        // 2) Inverse Propagation
-        uint8_t up_src = grid[down_row][col];
-        uint8_t down_src = grid[up_row][col];
-        uint8_t left_src = grid[row][right_col];
-        uint8_t right_src = grid[row][left_col];
-        inverse_propagate(center, up_src, down_src, left_src, right_src);
+        // 1) inverse_reflection auf Zentrum + Nachbarn
+        const uint8_t c_ref  = inverse_reflection(c , w_c );
+        const uint8_t up_ref = inverse_reflection(up, w_up);
+        const uint8_t dn_ref = inverse_reflection(dn, w_dn);
+        const uint8_t lf_ref = inverse_reflection(lf, w_lf);
+        const uint8_t rt_ref = inverse_reflection(rt, w_rt);
 
-        // 3) Inverse Collision
-        uint8_t val = inverse_collision(center, wall_mask[row][col]);
-        return val;
+        // 2) inverse_propagate „in diese Zelle“ (entspricht deiner grid-weiten Variante):
+        uint8_t prev = static_cast<uint8_t>(c_ref & 0b11110000);
+
+        if (dn_ref & 0b00001000) prev |= 0b00001000; // North kam von unten (dessen North)
+        if (up_ref & 0b00000010) prev |= 0b00000010; // South kam von oben (dessen South)
+        if (lf_ref & 0b00000100) prev |= 0b00000100; // East  kam von links (dessen East)
+        if (rt_ref & 0b00000001) prev |= 0b00000001; // West  kam von rechts (dessen West)
+
+        // 3) inverse_collision
+        return inverse_collision(prev, w_c);
     }
+}
+
+void saveBinary(const std::vector<uint8_t>& data, const char* filename)
+{
+    std::ofstream out(filename, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+}
+
+void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char* metaFilename)
+{
+    std::ofstream out(metaFilename, std::ios::binary);
+    const uint32_t magic = 0x48505031; // "HPP1"
+    const uint32_t version = 1;
+    out.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+    out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+    out.write(reinterpret_cast<const char*>(&originalSize), sizeof(originalSize));
+    out.write(reinterpret_cast<const char*>(&gridSize), sizeof(gridSize));
+}
+
+bool loadEncryptedMeta(uint64_t& originalSize, uint32_t& gridSize, const char* metaFilename)
+{
+    std::ifstream in(metaFilename, std::ios::binary);
+    if (!in) return false;
+    uint32_t magic = 0, version = 0;
+    in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    in.read(reinterpret_cast<char*>(&version), sizeof(version));
+    if (magic != 0x48505031 || version != 1) return false;
+    in.read(reinterpret_cast<char*>(&originalSize), sizeof(originalSize));
+    in.read(reinterpret_cast<char*>(&gridSize), sizeof(gridSize));
+    return static_cast<bool>(in);
 }

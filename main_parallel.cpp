@@ -11,6 +11,11 @@ using Matrix = std::vector<std::vector<uint8_t>>;
 constexpr int NUM_ITERATIONS = 1000;
 constexpr int TAG_NS = 0;
 
+static constexpr const char* ENC_BIN  = "encrypted_full.bin";
+static constexpr const char* ENC_META = "encrypted_full.meta";
+static constexpr const char* PLAIN_IN = "message.txt";
+static constexpr const char* DECRYPT_OUT = "decrypted_message.txt";
+
 #ifndef DUMP_FRAMES
     #define DUMP_FRAMES 1
 #endif
@@ -23,10 +28,12 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
     // Modus: true = Verschlüsseln, false = Entschlüsseln
-    bool doEncrypt = true;
+    bool doEncrypt = false;
 
-    const char *in_filename = doEncrypt ? "message.txt" : "encrypted_message.txt";
-    const char *out_filename = doEncrypt ? "encrypted_message.txt" : "decrypted_message.txt";
+    int mode = doEncrypt ? 1 : 0;
+    MPI_Bcast(&mode, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    doEncrypt = (mode != 0);
+
     const char *key_filename = "wall_mask.key";
 
     double t_start = MPI_Wtime();
@@ -36,26 +43,50 @@ int main(int argc, char **argv) {
     int grid_size = 0;
 
     if (rank == 0) {
-        // Einlesen der passenden Eingabedatei je nach Modus
-        fileData = readFileBytes(in_filename);
-        if (fileData.empty()) {
-            std::cerr << "ERROR: could not read input file '" << in_filename << "'\n";
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        originalSize = fileData.size();
-        grid_size = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(originalSize))));
-        std::cout << (doEncrypt ? "Encrypting" : "Decrypting") << " mode selected.\n";
-        std::cout << "Read " << originalSize << " bytes from " << in_filename
-                  << ", grid size = " << grid_size << std::endl;
-    }
+        if (doEncrypt) {
+            // Klartext laden
+            fileData = readFileBytes(PLAIN_IN);
+            if (fileData.empty()) {
+                std::cerr << "ERROR: could not read input file '" << PLAIN_IN << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            originalSize = fileData.size();
+            grid_size = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(originalSize))));
+            std::cout << "Encrypting mode selected.\n";
+            std::cout << "Read " << originalSize << " bytes from " << PLAIN_IN
+                    << ", grid size = " << grid_size << std::endl;
+        } 
+        else {
+            // Meta laden (liefert Originalgröße & N)
+            uint32_t Nmeta = 0;
+            if (!loadEncryptedMeta(originalSize, Nmeta, ENC_META)) {
+                std::cerr << "ERROR: could not read meta file '" << ENC_META << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            grid_size = static_cast<int>(Nmeta);
 
-    if (nprocs > grid_size) {
-        if (rank == 0) std::cerr << "nprocs > grid_size: mindestens ein Rank bekäme 0 Zeilen – für Torus ungültig.\n";
-        MPI_Abort(MPI_COMM_WORLD, 2);
+            // Voll verschlüsseltes Feld (N*N) laden
+            fileData = readFileBytes(ENC_BIN);
+            const size_t expected = static_cast<size_t>(grid_size) * grid_size;
+            if (fileData.size() != expected) {
+                std::cerr << "ERROR: '" << ENC_BIN << "' has " << fileData.size()
+                        << " bytes, expected " << expected << "\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            std::cout << "Decrypting mode selected.\n";
+            std::cout << "Loaded " << fileData.size() << " bytes from " << ENC_BIN
+                    << " and meta from " << ENC_META << ", grid size = " << grid_size
+                    << ", originalSize = " << originalSize << std::endl;
+        }
     }
 
     MPI_Bcast(&originalSize, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+     if (nprocs > grid_size) {
+        if (rank == 0) std::cerr << "nprocs > grid_size: mindestens ein Rank bekäme 0 Zeilen – für Torus ungültig.\n";
+        MPI_Abort(MPI_COMM_WORLD, 2);
+    }
 
     int rows_per_rank = grid_size / nprocs;
     int remainder = grid_size % nprocs;
@@ -65,8 +96,13 @@ int main(int argc, char **argv) {
     size_t paddedSize = static_cast<size_t>(grid_size) * grid_size;
     std::vector<uint8_t> padded;
     if (rank == 0) {
-        padded = fileData;
-        padded.resize(paddedSize, 0x00);
+        if (doEncrypt) {
+            padded = fileData;
+            padded.resize(paddedSize, 0x00); // Nur beim Encrypt wird gepaddet
+        } else {
+            // Beim Decrypt ist fileData bereits exakt N*N groß
+            padded = std::move(fileData); // keine Nullen anhängen!
+        }
     }
 
     std::vector<int> sendcounts, displs;
@@ -151,7 +187,7 @@ int main(int argc, char **argv) {
         if (local_rows >= 3) {
             for (int i = 2; i <= local_rows - 1; i++) {
                 for (int j = 0; j < grid_size; ++j) {
-                    (*target_grid)[i][j] = applyRules(*active_grid, wall_mask, doEncrypt, i, j);
+                    (*target_grid)[i][j] = applyRules(*active_grid, wall_mask, doEncrypt, i, j, offset_rows);
                 }
             }
         }
@@ -160,12 +196,12 @@ int main(int argc, char **argv) {
 
         if (local_rows >= 1) {
             for (int j = 0; j < grid_size; ++j) {
-                (*target_grid)[1][j] = applyRules(*active_grid, wall_mask, doEncrypt, 1, j);
+                (*target_grid)[1][j] = applyRules(*active_grid, wall_mask, doEncrypt, 1, j, offset_rows);
             }
         }
         if (local_rows >= 2) {
             for (int j = 0; j < grid_size; ++j) {
-                (*target_grid)[local_rows][j] = applyRules(*active_grid, wall_mask, doEncrypt, local_rows, j);
+                (*target_grid)[local_rows][j] = applyRules(*active_grid, wall_mask, doEncrypt, local_rows, j, offset_rows);
             }
         }
         std::swap(active_grid, target_grid);
@@ -227,12 +263,21 @@ int main(int argc, char **argv) {
         MPI_UINT8_T,
         0, MPI_COMM_WORLD);
 
-    if (rank == 0)
-    {
-        // Auf die Eingangsgröße kürzen (gleich bei Encrypt u. Decrypt)
-        result.resize(originalSize);
-        saveAsAsciiText(result, out_filename);
-        std::cout << "Saved " << out_filename << " (" << originalSize << " bytes)\n";
+   if (rank == 0) {
+        if (doEncrypt) {
+            // VOLLEN Zustand + Meta speichern
+            saveBinary(result, ENC_BIN);
+            saveEncryptedMeta(originalSize, static_cast<uint32_t>(grid_size), ENC_META);
+            std::cout << "Saved " << ENC_BIN << " (" << result.size() << " bytes) and "
+                    << ENC_META << " (originalSize=" << originalSize
+                    << ", grid_size=" << grid_size << ")\n";
+        } 
+        else {
+            // Rückgewonnenen Klartext auf Originalgröße kürzen und als Text speichern
+            result.resize(originalSize);
+            saveAsAsciiText(result, DECRYPT_OUT);
+            std::cout << "Saved " << DECRYPT_OUT << " (" << originalSize << " bytes)\n";
+        }
     }
 
     double t_end = MPI_Wtime();

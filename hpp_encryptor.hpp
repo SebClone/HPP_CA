@@ -45,6 +45,17 @@ uint8_t inverse_collision(uint8_t current_cell, bool is_wall);
 using Matrix = std::vector<std::vector<uint8_t>>;
 void broadcastMask(Mask &mask, MPI_Comm comm);
 void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst);
-uint8_t applyRules(Matrix &grid, const Mask &wall_mask, bool forward, int row, int col);
+
+// Gekapselte Hauptlogik der HPP-Operationen
+uint8_t applyRules(
+    const Matrix& active_grid,
+    const Mask&   wall_mask,
+    bool          doEncrypt,
+    int           i,
+    int           j,
+    int           offset_rows);
+void saveBinary(const std::vector<uint8_t>& data, const char* filename);
+void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char* metaFilename);
+bool loadEncryptedMeta(uint64_t& originalSize, uint32_t& gridSize, const char* metaFilename);
 
 #endif
