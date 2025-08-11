@@ -413,10 +413,10 @@ uint8_t applyRules(
         // 2) inverse_propagate „in diese Zelle“ (entspricht deiner grid-weiten Variante):
         uint8_t prev = static_cast<uint8_t>(c_ref & 0b11110000);
 
-        if (dn_ref & 0b00001000) prev |= 0b00001000; // North kam von unten (dessen North)
-        if (up_ref & 0b00000010) prev |= 0b00000010; // South kam von oben (dessen South)
-        if (lf_ref & 0b00000100) prev |= 0b00000100; // East  kam von links (dessen East)
-        if (rt_ref & 0b00000001) prev |= 0b00000001; // West  kam von rechts (dessen West)
+        if (up_ref & 0b00001000) prev |= 0b00001000; // N  kommt von OBEN
+        if (dn_ref & 0b00000010) prev |= 0b00000010; // S  kommt von UNTEN
+        if (rt_ref & 0b00000100) prev |= 0b00000100; // E  kommt von RECHTS
+        if (lf_ref & 0b00000001) prev |= 0b00000001; // W  kommt von LINKS
 
         // 3) inverse_collision
         return inverse_collision(prev, w_c);
