@@ -11,6 +11,10 @@ using Matrix = std::vector<std::vector<uint8_t>>;
 constexpr int NUM_ITERATIONS = 1000;
 constexpr int TAG_NS = 0;
 
+#ifndef DUMP_FRAMES
+    #define DUMP_FRAMES 1
+#endif
+
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
 
@@ -168,7 +172,8 @@ int main(int argc, char **argv) {
         std::swap(active_reqs, inactive_reqs);
 
         // Frames speichern
-        if (iter % 5 == 0) {
+        #if DUMP_FRAMES
+        if (iter % 5 == 0 || iter == NUM_ITERATIONS - 1) {
             // Gather das aktuelle Grid zu Rank 0
             std::vector<uint8_t> frame_core(local_rows * grid_size);
             for (int i = 0; i < local_rows; ++i) {
@@ -191,9 +196,10 @@ int main(int argc, char **argv) {
                         0, MPI_COMM_WORLD);
 
             if (rank == 0) {
-                save_frame_bin(frame, iter); // speichert unter z.B. frames/frame_000123.bin
+                save_frame_bin(frame, iter);
             }
         }
+        #endif
     }
     for (auto &r : halo_reqs_current) MPI_Request_free(&r);
     for (auto &r : halo_reqs_next)    MPI_Request_free(&r);
@@ -239,3 +245,4 @@ int main(int argc, char **argv) {
     MPI_Finalize();
     return 0;
 }
+
