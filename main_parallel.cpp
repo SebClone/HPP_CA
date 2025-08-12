@@ -5,6 +5,9 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <cstdio>
+#include <deque>      // für Pending-Requests
+#include <algorithm>  // std::fill, std::min
 
 using Matrix = std::vector<std::vector<uint8_t>>;
 
@@ -42,19 +45,37 @@ int main(int argc, char **argv) {
     uint64_t originalSize = 0;
     int grid_size = 0;
 
+    // --- PORTABILITY FIX: finde einen 64-bit Integer-MPI-Datentyp ---
+    MPI_Datatype MPI_UINT64_MATCHED;
+    {
+        int rc = MPI_Type_match_size(MPI_TYPECLASS_INTEGER, 8, &MPI_UINT64_MATCHED);
+        if (rc != MPI_SUCCESS) {
+            // Fallback – sollte praktisch nie passieren; prüfe Größe trotzdem
+            static_assert(sizeof(unsigned long long) == 8, "Need 64-bit unsigned long long");
+            MPI_UINT64_MATCHED = MPI_UNSIGNED_LONG_LONG;
+        }
+    }
+
     if (rank == 0) {
         if (doEncrypt) {
-            // Klartext laden
-            fileData = readFileBytes(PLAIN_IN);
-            if (fileData.empty()) {
-                std::cerr << "ERROR: could not read input file '" << PLAIN_IN << "'\n";
+            MPI_File fhin;
+            if (MPI_File_open(MPI_COMM_SELF, PLAIN_IN, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhin) != MPI_SUCCESS) {
+                std::cerr << "ERROR: could not open input file '" << PLAIN_IN << "'\n";
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
-            originalSize = fileData.size();
+            MPI_Offset fsz = 0;
+            MPI_File_get_size(fhin, &fsz);
+            MPI_File_close(&fhin);
+
+            if (fsz < 0) {
+                std::cerr << "ERROR: invalid size for '" << PLAIN_IN << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            originalSize = static_cast<uint64_t>(fsz);
             grid_size = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(originalSize))));
             std::cout << "Encrypting mode selected.\n";
-            std::cout << "Read " << originalSize << " bytes from " << PLAIN_IN
-                    << ", grid size = " << grid_size << std::endl;
+            std::cout << "Read size " << originalSize << " bytes from " << PLAIN_IN
+                      << ", grid size = " << grid_size << std::endl;
         } 
         else {
             // Meta laden (liefert Originalgröße & N)
@@ -65,22 +86,13 @@ int main(int argc, char **argv) {
             }
             grid_size = static_cast<int>(Nmeta);
 
-            // Voll verschlüsseltes Feld (N*N) laden
-            fileData = readFileBytes(ENC_BIN);
-            const size_t expected = static_cast<size_t>(grid_size) * grid_size;
-            if (fileData.size() != expected) {
-                std::cerr << "ERROR: '" << ENC_BIN << "' has " << fileData.size()
-                        << " bytes, expected " << expected << "\n";
-                MPI_Abort(MPI_COMM_WORLD, 1);
-            }
             std::cout << "Decrypting mode selected.\n";
-            std::cout << "Loaded " << fileData.size() << " bytes from " << ENC_BIN
-                    << " and meta from " << ENC_META << ", grid size = " << grid_size
-                    << ", originalSize = " << originalSize << std::endl;
+            std::cout << "Loaded meta from " << ENC_META << ", grid size = " << grid_size
+                      << ", originalSize = " << originalSize << std::endl;
         }
     }
 
-    MPI_Bcast(&originalSize, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&originalSize, 1, MPI_UINT64_MATCHED, 0, MPI_COMM_WORLD);
     MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
      if (nprocs > grid_size) {
@@ -94,40 +106,64 @@ int main(int argc, char **argv) {
     int offset_rows = rank * rows_per_rank + std::min(rank, remainder);
 
     size_t paddedSize = static_cast<size_t>(grid_size) * grid_size;
-    std::vector<uint8_t> padded;
-    if (rank == 0) {
-        if (doEncrypt) {
-            padded = fileData;
-            padded.resize(paddedSize, 0x00); // Nur beim Encrypt wird gepaddet
-        } else {
-            // Beim Decrypt ist fileData bereits exakt N*N groß
-            padded = std::move(fileData); // keine Nullen anhängen!
-        }
-    }
-
-    std::vector<int> sendcounts, displs;
-    if (rank == 0) {
-        sendcounts.resize(nprocs);
-        displs.resize(nprocs);
-        for (int r = 0; r < nprocs; ++r) {
-            int rrows = rows_per_rank + (r < remainder ? 1 : 0);
-            sendcounts[r] = rrows * grid_size;
-            displs[r] = (r * rows_per_rank + std::min(r, remainder)) * grid_size;
-        }
-    }
-
     std::vector<uint8_t> local_core(local_rows * grid_size);
-    MPI_Scatterv(
-        rank == 0 ? padded.data() : nullptr,
-        rank == 0 ? sendcounts.data() : nullptr,
-        rank == 0 ? displs.data() : nullptr,
-        MPI_UINT8_T,
-        local_core.data(),
-        local_rows * grid_size,
-        MPI_UINT8_T,
-        0,
-        MPI_COMM_WORLD);
 
+    if (doEncrypt) {
+        MPI_File fh;
+        if (MPI_File_open(MPI_COMM_WORLD, PLAIN_IN, MPI_MODE_RDONLY, MPI_INFO_NULL, &fh) != MPI_SUCCESS) {
+            if (rank == 0) std::cerr << "ERROR: could not open input file '" << PLAIN_IN << "'\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        MPI_File_set_atomicity(fh, 0);
+
+        // Puffer initial auf 0 (Padding lokal)
+        std::fill(local_core.begin(), local_core.end(), 0);
+
+        const MPI_Offset base = static_cast<MPI_Offset>(offset_rows) * grid_size;
+        const size_t want = static_cast<size_t>(local_rows) * grid_size;
+
+        size_t remaining = 0;
+        if (static_cast<uint64_t>(base) < originalSize) {
+            remaining = static_cast<size_t>(
+                std::min<uint64_t>(want, originalSize - static_cast<uint64_t>(base))
+            );
+        }
+
+        if (remaining > 0) {
+            MPI_File_read_at_all(fh, base, local_core.data(),
+                                 static_cast<int>(remaining), MPI_BYTE, MPI_STATUS_IGNORE);
+        }
+        MPI_File_close(&fh);
+    }
+    else {
+        // Jeder Rank liest seinen zusammenhängenden Zeilenblock aus ENC_BIN.
+        MPI_File fh;
+        if (MPI_File_open(MPI_COMM_WORLD, ENC_BIN, MPI_MODE_RDONLY, MPI_INFO_NULL, &fh) != MPI_SUCCESS) {
+            if (rank == 0) std::cerr << "ERROR: could not open '" << ENC_BIN << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        // Optional: Atomicity aus (typischerweise schneller)
+        MPI_File_set_atomicity(fh, 0);
+
+         MPI_Offset fsz = 0;
+        MPI_File_get_size(fh, &fsz);
+        if (fsz != static_cast<MPI_Offset>(paddedSize)) {
+            if (rank == 0) {
+                std::cerr << "ERROR: '" << ENC_BIN << "' has " << fsz
+                          << " bytes, expected " << paddedSize << "\n";
+            }
+            MPI_File_close(&fh);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+
+        MPI_Offset file_off = static_cast<MPI_Offset>(offset_rows) * grid_size; // Byte-Offset, da 1 Byte/Element
+        MPI_File_read_at_all(fh, file_off,
+                             local_core.data(),
+                             static_cast<int>(local_core.size()),
+                             MPI_BYTE, MPI_STATUS_IGNORE);
+        MPI_File_close(&fh);
+    }
+    
     Matrix grid_current(local_rows + 2, std::vector<uint8_t>(grid_size));
     Matrix grid_next = grid_current;
 
@@ -210,7 +246,7 @@ int main(int argc, char **argv) {
         // Frames speichern
         #if DUMP_FRAMES
         if (iter % 5 == 0 || iter == NUM_ITERATIONS - 1) {
-            // Gather das aktuelle Grid zu Rank 0
+            // lokalen Frame-Puffer bilden
             std::vector<uint8_t> frame_core(local_rows * grid_size);
             for (int i = 0; i < local_rows; ++i) {
                 copy_n_bytes(
@@ -219,21 +255,28 @@ int main(int argc, char **argv) {
                     frame_core.data() + i * grid_size);
             }
 
-            std::vector<uint8_t> frame;
-            if (rank == 0) {
-                frame.resize(paddedSize);
-            }
+            // Eine Datei pro Frame
+            char fname[128];
+            std::snprintf(fname, sizeof(fname), "frame_%05d.bin", iter);
 
-            MPI_Gatherv(frame_core.data(), local_rows * grid_size, MPI_UINT8_T,
-                        rank == 0 ? frame.data() : nullptr,
-                        rank == 0 ? sendcounts.data() : nullptr,
-                        rank == 0 ? displs.data() : nullptr,
-                        MPI_UINT8_T,
-                        0, MPI_COMM_WORLD);
+            MPI_File fhf;
+            MPI_File_open(MPI_COMM_WORLD, fname,
+                          MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fhf);
+            MPI_File_set_atomicity(fhf, 0);
 
-            if (rank == 0) {
-                save_frame_bin(frame, iter);
-            }
+            // Jeder Rank schreibt an seinen Zeilen-Offset
+            MPI_Offset off = static_cast<MPI_Offset>(offset_rows) * grid_size;
+
+            // Nicht-blockierendes kollektives I/O (kann man ohne sofortiges Wait überlappen)
+            MPI_Request req;
+            MPI_File_iwrite_at_all(fhf, off,
+                                   frame_core.data(),
+                                   static_cast<int>(frame_core.size()),
+                                   MPI_BYTE, &req);
+
+            // Für Einfachheit warten wir direkt; für Overlap: Requests sammeln und später warten
+            MPI_Wait(&req, MPI_STATUS_IGNORE);
+            MPI_File_close(&fhf);
         }
         #endif
     }
@@ -250,34 +293,65 @@ int main(int argc, char **argv) {
             result_core.data() + i * grid_size);
     }
 
-    std::vector<uint8_t> result;
-    if (rank == 0)
-    {
-        result.resize(paddedSize);
-    }
-    MPI_Gatherv(
-        result_core.data(), local_rows * grid_size, MPI_UINT8_T,
-        rank == 0 ? result.data() : nullptr,
-        rank == 0 ? sendcounts.data() : nullptr,
-        rank == 0 ? displs.data() : nullptr,
-        MPI_UINT8_T,
-        0, MPI_COMM_WORLD);
-
-   if (rank == 0) {
-        if (doEncrypt) {
-            // VOLLEN Zustand + Meta speichern
-            saveBinary(result, ENC_BIN);
-            saveEncryptedMeta(originalSize, static_cast<uint32_t>(grid_size), ENC_META);
-            std::cout << "Saved " << ENC_BIN << " (" << result.size() << " bytes) and "
-                    << ENC_META << " (originalSize=" << originalSize
-                    << ", grid_size=" << grid_size << ")\n";
-        } 
-        else {
-            // Rückgewonnenen Klartext auf Originalgröße kürzen und als Text speichern
-            result.resize(originalSize);
-            saveAsAsciiText(result, DECRYPT_OUT);
-            std::cout << "Saved " << DECRYPT_OUT << " (" << originalSize << " bytes)\n";
+    if (doEncrypt) {  
+        MPI_File fh;
+        MPI_File_open(MPI_COMM_WORLD, ENC_BIN,
+                    MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh);
+        MPI_File_set_atomicity(fh, 0);
+        if (rank == 0) {
+            MPI_File_set_size(fh, static_cast<MPI_Offset>(paddedSize));
         }
+        MPI_Barrier(MPI_COMM_WORLD); 
+
+        MPI_Offset file_off = static_cast<MPI_Offset>(offset_rows) * grid_size;
+        MPI_File_write_at_all(fh, file_off,
+                              result_core.data(),
+                              static_cast<int>(result_core.size()),
+                              MPI_BYTE, MPI_STATUS_IGNORE);
+
+        MPI_File_close(&fh);
+
+        if (rank == 0) {
+            // Meta bleibt klein → auf Rank 0 schreiben
+            saveEncryptedMeta(originalSize, static_cast<uint32_t>(grid_size), ENC_META);
+            std::cout << "Saved " << ENC_BIN << " (parallel, "
+                      << paddedSize << " bytes) and " << ENC_META
+                      << " (originalSize=" << originalSize
+                      << ", grid_size=" << grid_size << ")\n";
+        }
+    } 
+    else {
+        // *** CHANGE: Decrypt -> Klartext parallel schreiben (ohne Gather)
+        MPI_File fh;
+        MPI_File_open(MPI_COMM_WORLD, DECRYPT_OUT,
+                      MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh);
+        MPI_File_set_atomicity(fh, 0);
+
+        if (rank == 0) {
+            // Datei genau auf originalSize einstellen (kein Padding im Output)
+            MPI_File_set_size(fh, static_cast<MPI_Offset>(originalSize));
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        const MPI_Offset base = static_cast<MPI_Offset>(offset_rows) * grid_size;
+        const size_t have = static_cast<size_t>(local_rows) * grid_size;
+
+        size_t to_write = 0;
+        if (static_cast<uint64_t>(base) < originalSize) {
+            to_write = static_cast<size_t>(
+                std::min<uint64_t>(have, originalSize - static_cast<uint64_t>(base))
+            );
+        }
+
+        if (to_write > 0) {
+            MPI_File_write_at_all(fh, base, result_core.data(),
+                                  static_cast<int>(to_write), MPI_BYTE, MPI_STATUS_IGNORE);
+        }
+        MPI_File_close(&fh);
+
+        if (rank == 0) {
+            std::cout << "Saved " << DECRYPT_OUT << " (" << originalSize << " bytes, parallel)\n";
+        }   
     }
 
     double t_end = MPI_Wtime();
