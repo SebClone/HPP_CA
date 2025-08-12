@@ -1,360 +1,372 @@
 #include "hpp_encryptor.hpp"
+#include "include/app_config.hpp"
 
-constexpr int NUM_ITERATIONS = 1000;
+#include <cmath>
+#include <mpi.h>
+#include <vector>
+#include <iostream>
+#include <string>
+#include <iomanip>
+#include <cstdio>
+#include <deque>   
+#include <algorithm>  
 
-int main()
-{
-    bool doEncrypt       = true;   
-    bool doDecrypt       = true; 
-    bool visualize       = false;  
-    bool printEncrypted  = true;
-    bool printDecrypted  = true;
+using Matrix = std::vector<std::vector<uint8_t>>;
 
-    if (!doEncrypt && !doDecrypt) 
+
+constexpr int TAG_NS = 0;
+
+int main(int argc, char **argv) {
+    MPI_Init(&argc, &argv);
+
+    int rank, nprocs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
+    AppConfig cfg = parse_args_or_default(argc, argv, rank);
+    bcast_config(cfg, /*root=*/0, MPI_COMM_WORLD);
+
+    // Verhalten
+    const bool doEncrypt      = (cfg.mode == AppMode::Encrypt);
+    const int numIterations   = cfg.iterations;
+    const int frameInterval   = cfg.frame_interval;
+    const bool dumpFrames     = cfg.dump_frames;
+    const bool cartReorder    = cfg.cart_reorder;
+    const bool atomicIO       = cfg.atomic_io;
+    const double wallDensity  = cfg.wall_density;
+    const std::uint64_t seed  = cfg.seed;
+
+    // Eingabe- und Ausgabepfade
+    const std::string& inPlain   = cfg.input;
+    const std::string& encBin    = cfg.enc_bin;
+    const std::string& metaPath  = cfg.meta;
+    const std::string& keyPath   = cfg.key;
+    const std::string& outPlain  = cfg.output;
+
+    double t_start = MPI_Wtime();
+
+    std::vector<uint8_t> fileData;
+    uint64_t originalSize = 0;
+    int grid_size = 0;
+
+    // --- PORTABILITY FIX: finde einen 64-bit Integer-MPI-Datentyp ---
+    MPI_Datatype MPI_UINT64_MATCHED;
     {
-        std::cerr << "Please enable encrypt or decrypt in the flags.\n";
-        return 1;
+        int rc = MPI_Type_match_size(MPI_TYPECLASS_INTEGER, 8, &MPI_UINT64_MATCHED);
+        if (rc != MPI_SUCCESS) {
+            // Fallback – sollte praktisch nie passieren; prüfe Größe trotzdem
+            static_assert(sizeof(unsigned long long) == 8, "Need 64-bit unsigned long long");
+            MPI_UINT64_MATCHED = MPI_UNSIGNED_LONG_LONG;
+        }
     }
 
-    // ----------------------------------------------
-    // ENCRYPTION 
-    // ----------------------------------------------
-    if (doEncrypt) 
-    {
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Load Text-File" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-        std::string filename = "message.txt";
-        std::vector<uint8_t> fileData = readFileBytes(filename); // Read file as binary data
-
-        std::cout << "Read " << fileData.size() << " bytes from " << filename << std::endl;
-
-        std::cout << "Reshaping data into a grid..." << std::endl;
-        size_t grid_size;
-        std::vector<std::vector<uint8_t>> grid = reshapeToMatrix(fileData, grid_size);
-
-        if (visualize)
-        {
-            std::cout << "Reshaped Matrix (" << grid_size << "x" << grid_size << "):" << std::endl;
-            for (const auto &row : grid)
-            {
-                for (const auto &cell : row)
-                {
-                    printBits(cell);
-                    std::cout << " ";
-                }
-                std::cout << std::endl;
+    if (rank == 0) {
+        if (doEncrypt) {
+            MPI_File fhin;
+            if (MPI_File_open(MPI_COMM_SELF, inPlain.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fhin) != MPI_SUCCESS) {
+                std::cerr << "ERROR: could not open input file '" << inPlain.c_str() << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
             }
+            MPI_Offset fsz = 0;
+            MPI_File_get_size(fhin, &fsz);
+            MPI_File_close(&fhin);
+
+            if (fsz < 0) {
+                std::cerr << "ERROR: invalid size for '" << inPlain.c_str() << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            originalSize = static_cast<uint64_t>(fsz);
+            grid_size = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(originalSize))));
+            std::cout << "Encrypting mode selected.\n";
+            std::cout << "Read size " << originalSize << " bytes from " << inPlain.c_str()
+                      << ", grid size = " << grid_size << std::endl;
+        } 
+        else {
+            // Meta laden (liefert Originalgröße & N)
+            uint32_t Nmeta = 0;
+            if (!loadEncryptedMeta(originalSize, Nmeta, metaPath.c_str())) {
+                std::cerr << "ERROR: could not read meta file '" << metaPath.c_str() << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            grid_size = static_cast<int>(Nmeta);
+
+            std::cout << "Decrypting mode selected.\n";
+            std::cout << "Loaded meta from " << metaPath.c_str() << ", grid size = " << grid_size
+                      << ", originalSize = " << originalSize << std::endl;
+        }
+    }
+
+    MPI_Bcast(&originalSize, 1, MPI_UINT64_MATCHED, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+     if (nprocs > grid_size) {
+        if (rank == 0) std::cerr << "nprocs > grid_size: mindestens ein Rank bekäme 0 Zeilen – für Torus ungültig.\n";
+        MPI_Abort(MPI_COMM_WORLD, 2);
+    }
+
+    int rows_per_rank = grid_size / nprocs;
+    int remainder = grid_size % nprocs;
+    int local_rows = rows_per_rank + (rank < remainder ? 1 : 0);
+    int offset_rows = rank * rows_per_rank + std::min(rank, remainder);
+
+    size_t paddedSize = static_cast<size_t>(grid_size) * grid_size;
+    std::vector<uint8_t> local_core(local_rows * grid_size);
+
+    if (doEncrypt) {
+        MPI_File fh;
+        if (MPI_File_open(MPI_COMM_WORLD, inPlain.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fh) != MPI_SUCCESS) {
+            if (rank == 0) std::cerr << "ERROR: could not open input file '" << inPlain.c_str() << "'\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        MPI_File_set_atomicity(fh, atomicIO);
+
+        // Puffer initial auf 0 (Padding lokal)
+        std::fill(local_core.begin(), local_core.end(), 0);
+
+        const MPI_Offset base = static_cast<MPI_Offset>(offset_rows) * grid_size;
+        const size_t want = static_cast<size_t>(local_rows) * grid_size;
+
+        size_t remaining = 0;
+        if (static_cast<uint64_t>(base) < originalSize) {
+            remaining = static_cast<size_t>(
+                std::min<uint64_t>(want, originalSize - static_cast<uint64_t>(base))
+            );
         }
 
-        std::cout << "Generating random wall mask..." << std::endl;
-        std::cout << "This will set ~10% of the grid cells to walls." << std::endl;
-        Mask wall_mask = generateRandomWallMask(grid_size, 0.1);
-        std::cout << "Saving wall mask to binary file..." << std::endl;
-        saveWallMaskBinary(wall_mask, "wall_mask.key");
-        std::cout << "Saved wall mask to 'wall_mask.key'" << std::endl;
+        if (remaining > 0) {
+            MPI_File_read_at_all(fh, base, local_core.data(),
+                                 static_cast<int>(remaining), MPI_BYTE, MPI_STATUS_IGNORE);
+        }
+        MPI_File_close(&fh);
+    }
+    else {
+        // Jeder Rank liest seinen zusammenhängenden Zeilenblock aus ENC_BIN.
+        MPI_File fh;
+        if (MPI_File_open(MPI_COMM_WORLD, encBin.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fh) != MPI_SUCCESS) {
+            if (rank == 0) std::cerr << "ERROR: could not open '" << encBin.c_str() << "'\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        // Optional: Atomicity aus (typischerweise schneller)
+        MPI_File_set_atomicity(fh, 0);
 
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "HPP-Algorithm" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        std::cout << "Number of iterations: " << NUM_ITERATIONS << std::endl;
-        std::cout << "Grid size:" << grid_size << "x" << grid_size << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        if (visualize)
-        {
-            std::cout << "Initial Grid:" << std::endl;
-            printGrid(grid);
+         MPI_Offset fsz = 0;
+        MPI_File_get_size(fh, &fsz);
+        if (fsz != static_cast<MPI_Offset>(paddedSize)) {
+            if (rank == 0) {
+                std::cerr << "ERROR: '" << encBin.c_str() << "' has " << fsz
+                          << " bytes, expected " << paddedSize << "\n";
+            }
+            MPI_File_close(&fh);
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Encrypting message..." << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        for (int r = 0; r < NUM_ITERATIONS; ++r)
-        {
-            if (visualize)
-            {
-                std::cout << "----------------------------------------------" << std::endl;
-                std::cout << "Iteration: " << r << std::endl;
-                std::cout << std::endl;
-                std::cout << "Grid by iteration " << r << std::endl;
-                printGrid(grid);
-                std::cout << "----------------------------------------------" << std::endl;
-            
-                std::cout << "Simulating collision..." << std::endl;
-                std::cout << std::endl;
-            }
-
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = collision(grid[i][j], wall_mask[i][j]);
-                }
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Grid after collision:" << std::endl;
-                printGrid(grid);
-                std::cout << std::endl;
-            }
-
-            std::vector<std::vector<uint8_t>> propagation_grid(grid_size, std::vector<uint8_t>(grid_size, 0)); // Initialize a new grid to store the propagated values
-            
-            if (visualize)
-            {
-                std::cout << "Propagating particles..." << std::endl;
-                std::cout << std::endl;
-            }
+        MPI_Offset file_off = static_cast<MPI_Offset>(offset_rows) * grid_size; // Byte-Offset, da 1 Byte/Element
+        MPI_File_read_at_all(fh, file_off,
+                             local_core.data(),
+                             static_cast<int>(local_core.size()),
+                             MPI_BYTE, MPI_STATUS_IGNORE);
+        MPI_File_close(&fh);
+    }
     
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    // Check whether there is a next cell to propagate to
-                    uint8_t &center = grid[i][j]; // current center cell
+    Matrix grid_current(local_rows + 2, std::vector<uint8_t>(grid_size));
+    Matrix grid_next = grid_current;
 
-                    // Toroidal neighbor assignments
-                    // Using + grid_size and % grid_size to move in a toroidal manner
-                    uint8_t &up = propagation_grid[(i - 1 + grid_size) % grid_size][j];
-                    uint8_t &down = propagation_grid[(i + 1) % grid_size][j];
-                    uint8_t &left = propagation_grid[i][(j - 1 + grid_size) % grid_size];
-                    uint8_t &right = propagation_grid[i][(j + 1) % grid_size];
+    for (int i = 0; i < local_rows; ++i) {
+        copy_n_bytes(
+            local_core.data() + i * grid_size,
+            static_cast<std::size_t>(grid_size),
+            grid_current[i + 1].data());
+    }
 
-                    uint8_t temp = center;
-                    propagate(temp, up, down, left, right);
-                    propagation_grid[i][j] |= temp; // Not prpagatet particals will remain in the gird and not be deleted
+    Mask wall_mask;
+    if (rank == 0) {
+        if (doEncrypt) {
+            wall_mask = generateRandomWallMask(grid_size, wallDensity);
+            saveWallMaskBinary(wall_mask, keyPath);
+            std::cout << "Wall mask generated and saved to " << keyPath << "\n";
+        } 
+        else {
+            wall_mask = loadWallMaskBinary(grid_size, keyPath);
+            std::cout << "Wall mask loaded from " << keyPath << "\n";
+        }
+    }
+    broadcastMask(wall_mask, MPI_COMM_WORLD);
+
+
+    // MPI-Topologie für Nachbarschafts-Kommunikation
+    int dims[1]     = { nprocs }; // 1D-Topologie mit nprocs Prozessen
+    int periods[1]  = { 1 };      // 1 = periodisch (Torus), 0 = nicht periodisch
+    int reorder     = cartReorder;          // MPI darf Ranks nicht neu anordnen für bessere Nachbarschaft  
+    MPI_Comm cart_comm; 
+    MPI_Cart_create(MPI_COMM_WORLD, 1, dims, periods, reorder, &cart_comm);
+
+    int up, down;
+    MPI_Cart_shift(cart_comm, 0, 1, &up, &down);
+
+    MPI_Request halo_reqs_current[4], halo_reqs_next[4];
+
+    MPI_Recv_init(grid_current[0].data(), grid_size, MPI_UINT8_T, up, TAG_NS, cart_comm, &halo_reqs_current[0]);
+    MPI_Recv_init(grid_current[local_rows + 1].data(), grid_size, MPI_UINT8_T, down, TAG_NS, cart_comm, &halo_reqs_current[1]);
+    MPI_Send_init(grid_current[1].data(), grid_size, MPI_UINT8_T, up, TAG_NS, cart_comm, &halo_reqs_current[2]);
+    MPI_Send_init(grid_current[local_rows].data(), grid_size, MPI_UINT8_T, down, TAG_NS, cart_comm, &halo_reqs_current[3]);
+
+    MPI_Recv_init(grid_next[0].data(), grid_size, MPI_UINT8_T, up, TAG_NS, cart_comm, &halo_reqs_next[0]);
+    MPI_Recv_init(grid_next[local_rows + 1].data(), grid_size, MPI_UINT8_T, down, TAG_NS, cart_comm, &halo_reqs_next[1]);
+    MPI_Send_init(grid_next[1].data(), grid_size, MPI_UINT8_T, up, TAG_NS, cart_comm, &halo_reqs_next[2]);
+    MPI_Send_init(grid_next[local_rows].data(), grid_size, MPI_UINT8_T, down, TAG_NS, cart_comm, &halo_reqs_next[3]);
+
+    Matrix* active_grid = &grid_current;
+    Matrix* target_grid = &grid_next;
+    MPI_Request* active_reqs = halo_reqs_current;
+    MPI_Request* inactive_reqs = halo_reqs_next;
+
+    for (int iter = 0; iter < numIterations; ++iter) {
+        MPI_Startall(4, active_reqs);
+
+        // Innenbereich berechnen
+        if (local_rows >= 3) {
+            for (int i = 2; i <= local_rows - 1; i++) {
+                for (int j = 0; j < grid_size; ++j) {
+                    (*target_grid)[i][j] = applyRules(*active_grid, wall_mask, doEncrypt, i, j, offset_rows);
                 }
-            }
-
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = propagation_grid[i][j];
-                }
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Grid after propagation:" << std::endl;
-                printGrid(grid);
-                std::cout << std::endl;
-            }
-
-            if (visualize)
-            {
-                std::cout << "Reflecting particles..." << std::endl;
-                std::cout << std::endl;
-            }
-        
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = reflection(grid[i][j], wall_mask[i][j]);
-                }
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Grid after reflection:" << std::endl;
-                printGrid(grid);
-                std::cout << std::endl;
-                std::cout << "End of iteration " << r << std::endl;
-                std::cout << "----------------------------------------------" << std::endl;
             }
         }
 
-        std::cout << "Saving final grid to ASCII text file..." << std::endl;
-        std::vector<uint8_t> encrypted_data = flattenMatrix(grid);
+        MPI_Waitall(4, active_reqs, MPI_STATUSES_IGNORE);
 
-        saveAsAsciiText(encrypted_data, "encrypted_message.txt"); 
-        std::cout << "Saved reconstructed ASCII file as 'encrypted_message.txt'" << std::endl;
-
-        if (printEncrypted)
-        {
-            std::cout << "Encrypted message (as ASCII):" << std::endl;
-            for (auto c : encrypted_data) {
-                std::cout << static_cast<char>(c);
+        if (local_rows >= 1) {
+            for (int j = 0; j < grid_size; ++j) {
+                (*target_grid)[1][j] = applyRules(*active_grid, wall_mask, doEncrypt, 1, j, offset_rows);
             }
-            std::cout << std::endl;
+        }
+        if (local_rows >= 2) {
+            for (int j = 0; j < grid_size; ++j) {
+                (*target_grid)[local_rows][j] = applyRules(*active_grid, wall_mask, doEncrypt, local_rows, j, offset_rows);
+            }
+        }
+        std::swap(active_grid, target_grid);
+        std::swap(active_reqs, inactive_reqs);
+
+        // Frames speichern
+        if (dumpFrames) {
+            if (iter % frameInterval == 0 || iter == numIterations - 1) {
+                // lokalen Frame-Puffer bilden
+                std::vector<uint8_t> frame_core(local_rows * grid_size);
+                for (int i = 0; i < local_rows; ++i) {
+                    copy_n_bytes(
+                        (*active_grid)[i + 1].data(),
+                        static_cast<std::size_t>(grid_size),
+                        frame_core.data() + i * grid_size);
+                }
+
+                // Eine Datei pro Frame
+                char fname[128];
+                std::snprintf(fname, sizeof(fname), "frame_%05d.bin", iter);
+
+                MPI_File fhf;
+                MPI_File_open(MPI_COMM_WORLD, fname,
+                            MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fhf);
+                MPI_File_set_atomicity(fhf, 0);
+
+                // Jeder Rank schreibt an seinen Zeilen-Offset
+                MPI_Offset off = static_cast<MPI_Offset>(offset_rows) * grid_size;
+
+                // Nicht-blockierendes kollektives I/O (kann man ohne sofortiges Wait überlappen)
+                MPI_Request req;
+                MPI_File_iwrite_at_all(fhf, off,
+                                    frame_core.data(),
+                                    static_cast<int>(frame_core.size()),
+                                    MPI_BYTE, &req);
+
+                // Für Einfachheit warten wir direkt; für Overlap: Requests sammeln und später warten
+                MPI_Wait(&req, MPI_STATUS_IGNORE);
+                MPI_File_close(&fhf);
+            }
         }
     }
 
+    for (auto &r : halo_reqs_current) MPI_Request_free(&r);
+    for (auto &r : halo_reqs_next)    MPI_Request_free(&r);
+    MPI_Comm_free(&cart_comm);
 
-    // ----------------------------------------------
-    // DECRYPTION
-    // ----------------------------------------------
-    if (doDecrypt) 
+    std::vector<uint8_t> result_core(local_rows * grid_size);
+    for (int i = 0; i < local_rows; ++i)
     {
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Inverse algorithm " << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
+        copy_n_bytes(
+            (*active_grid)[i + 1].data(),
+            static_cast<std::size_t>(grid_size),
+            result_core.data() + i * grid_size);
+    }
 
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Load encrypted text-file" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-        std::string filename = "encrypted_message.txt";
-        std::vector<uint8_t> fileData = readFileBytes(filename); // Read file as binary data
+    if (doEncrypt) {  
+        MPI_File fh;
+        MPI_File_open(MPI_COMM_WORLD, encBin.c_str(),
+                    MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh);
+        MPI_File_set_atomicity(fh, 0);
+        if (rank == 0) {
+            MPI_File_set_size(fh, static_cast<MPI_Offset>(paddedSize));
+        }
+        MPI_Barrier(MPI_COMM_WORLD); 
 
-        std::cout << "Read " << fileData.size() << " bytes from " << filename << std::endl;
+        MPI_Offset file_off = static_cast<MPI_Offset>(offset_rows) * grid_size;
+        MPI_File_write_at_all(fh, file_off,
+                              result_core.data(),
+                              static_cast<int>(result_core.size()),
+                              MPI_BYTE, MPI_STATUS_IGNORE);
 
-        std::cout << "Reshaping data into a grid..." << std::endl;
-        size_t grid_size;
-        std::vector<std::vector<uint8_t>> grid = reshapeToMatrix(fileData, grid_size);
+        MPI_File_close(&fh);
 
-        if (visualize)
-        {
-            std::cout << "Reshaped Matrix (" << grid_size << "x" << grid_size << "):" << std::endl;
-            for (const auto &row : grid)
-            {
-                for (const auto &cell : row)
-                {
-                    printBits(cell);
-                    std::cout << " ";
-                }
-                std::cout << std::endl;
-            }
+        if (rank == 0) {
+            // Meta bleibt klein → auf Rank 0 schreiben
+            saveEncryptedMeta(originalSize, static_cast<uint32_t>(grid_size), metaPath.c_str());
+            std::cout << "Saved " << encBin.c_str() << " (parallel, "
+                      << paddedSize << " bytes) and " << metaPath.c_str()
+                      << " (originalSize=" << originalSize
+                      << ", grid_size=" << grid_size << ")\n";
+        }
+    } 
+    else {
+        // *** CHANGE: Decrypt -> Klartext parallel schreiben (ohne Gather)
+        MPI_File fh;
+        MPI_File_open(MPI_COMM_WORLD, outPlain.c_str(),
+                      MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh);
+        MPI_File_set_atomicity(fh, 0);
+
+        if (rank == 0) {
+            // Datei genau auf originalSize einstellen (kein Padding im Output)
+            MPI_File_set_size(fh, static_cast<MPI_Offset>(originalSize));
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        const MPI_Offset base = static_cast<MPI_Offset>(offset_rows) * grid_size;
+        const size_t have = static_cast<size_t>(local_rows) * grid_size;
+
+        size_t to_write = 0;
+        if (static_cast<uint64_t>(base) < originalSize) {
+            to_write = static_cast<size_t>(
+                std::min<uint64_t>(have, originalSize - static_cast<uint64_t>(base))
+            );
         }
 
-        std::cout << "Load wall mask... " << NUM_ITERATIONS << std::endl;
-        Mask wall_mask = loadWallMaskBinary(grid_size, "wall_mask.key");
-        std::cout << "Loaded wall mask from 'wall_mask.key'" << std::endl;
-
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "HPP-Algorithm" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-
-        std::cout << "Number of iterations: " << NUM_ITERATIONS << std::endl;
-        std::cout << "Grid size:" << grid_size << "x" << grid_size << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-        
-        if (visualize)
-        {
-            std::cout << "Initial Grid:" << std::endl;
-            printGrid(grid);
+        if (to_write > 0) {
+            MPI_File_write_at_all(fh, base, result_core.data(),
+                                  static_cast<int>(to_write), MPI_BYTE, MPI_STATUS_IGNORE);
         }
+        MPI_File_close(&fh);
 
-        std::cout << "----------------------------------------------" << std::endl;
-        std::cout << "Decrypting message..." << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
-        for (int r = 0; r < NUM_ITERATIONS; ++r)
-        {
-            if (visualize)
-            {
-                std::cout << "----------------------------------------------" << std::endl;
-                std::cout << "Inverse Iteration: " << r << std::endl;
-                std::cout << std::endl;
-                std::cout << "Grid by iteration " << r << std::endl;
-                printGrid(grid);
-                std::cout << "----------------------------------------------" << std::endl;
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Reflecting particles..." << std::endl;
-                std::cout << std::endl;
-            }
-
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = inverse_reflection(grid[i][j], wall_mask[i][j]);
-                }
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Grid after reflection:" << std::endl;
-                printGrid(grid);
-            }
-
-            std::vector<std::vector<uint8_t>> propagation_grid(grid_size, std::vector<uint8_t>(grid_size, 0)); // Initialize a new grid to store the propagated values
-
-            if (visualize)
-            {
-                std::cout << "Propagating particles..." << std::endl;
-                std::cout << std::endl;
-            }
-
-            std::vector<std::vector<uint8_t>> original_grid = grid;
-
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    uint8_t center_original = grid[i][j];
-                    uint8_t &center = propagation_grid[i][j];
-                    center = center_original & 0b11110000; // Preserve upper bits (e.g., wall)
-
-                    uint8_t &down = original_grid[(i - 1 + grid_size) % grid_size][j];  // north particle comes from below
-                    uint8_t &up = original_grid[(i + 1) % grid_size][j];                // south from above
-                    uint8_t &right = original_grid[i][(j - 1 + grid_size) % grid_size]; // east from left
-                    uint8_t &left = original_grid[i][(j + 1) % grid_size];              // west from right
-
-                    inverse_propagate(center, up, down, left, right);
-                }
-            }
-
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = propagation_grid[i][j];
-                }
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Grid after propagation:" << std::endl;
-                printGrid(grid);
-                std::cout << std::endl;
-            }
-
-            if (visualize)
-            {
-                std::cout << "Simulating collision..." << std::endl;
-                std::cout << std::endl;
-            }
-            
-            for (int i = 0; i < grid_size; ++i)
-            {
-                for (int j = 0; j < grid_size; ++j)
-                {
-                    grid[i][j] = inverse_collision(grid[i][j], wall_mask[i][j]);
-                }
-            }
-            
-            if (visualize)
-            {
-                std::cout << "Grid after collision:" << std::endl;
-                printGrid(grid);
-                std::cout << std::endl;
-                std::cout << std::endl;
-                std::cout << "End of inverse iteration " << r << std::endl;
-                std::cout << "----------------------------------------------" << std::endl;
-            }
-        }
-
-        std::cout << "Saving final grid to ASCII text file..." << std::endl;
-        std::vector<uint8_t> final_data = flattenMatrix(grid); // Flatten the 2D grid
-        saveAsAsciiText(final_data, "decrypted_message.txt");  // Save as ASCII text
-        std::cout << "Saved reconstructed ASCII file as 'decrypted_message.txt'" << std::endl;
-
-        if (printDecrypted)
-        {
-            std::cout << "Decrypted message (as ASCII):" << std::endl;
-            for (auto c : final_data) {
-                std::cout << static_cast<char>(c);
-            }
-            std::cout << std::endl;
+        if (rank == 0) {
+            std::cout << "Saved " << outPlain.c_str() << " (" << originalSize << " bytes, parallel)\n";
         }
     }
 
+    double t_end = MPI_Wtime();
+    if (rank == 0)
+    {
+        std::cout << std::fixed << std::setprecision(6)
+                  << "Total runtime: " << (t_end - t_start) << " seconds\n";
+    }
+
+    MPI_Finalize();
     return 0;
 }
+
