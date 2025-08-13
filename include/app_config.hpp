@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 #include <mpi.h>
 
 enum class AppMode : uint8_t { Decrypt = 0, Encrypt = 1 };
