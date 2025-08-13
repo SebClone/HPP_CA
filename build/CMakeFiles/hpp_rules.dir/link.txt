@@ -1,0 +1,2 @@
+/usr/bin/ar qc libhpp_rules.a CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o
+/usr/bin/ranlib libhpp_rules.a

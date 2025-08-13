@@ -1,0 +1,2 @@
+/usr/bin/ar qc libapp_config.a CMakeFiles/app_config.dir/src/app_config.cpp.o
+/usr/bin/ranlib libapp_config.a

@@ -5,30 +5,26 @@
 #include <iostream>
 
 namespace {
+    inline MPI_Offset byte_offset(const RowDist& d) {
+        return static_cast<MPI_Offset>(d.offset_rows) * d.grid_size; // 1 Byte/Elem
+    }
+    inline std::size_t local_bytes(const RowDist& d) {
+        return static_cast<std::size_t>(d.local_rows) * d.grid_size;
+    }
 
-// kleine Helfer
-inline MPI_Offset byte_offset(const RowDist& d) {
-    return static_cast<MPI_Offset>(d.offset_rows) * d.grid_size; // 1 Byte/Elem
-}
-inline std::size_t local_bytes(const RowDist& d) {
-    return static_cast<std::size_t>(d.local_rows) * d.grid_size;
-}
+    // einheitliche MPI-Fehlerprüfung
+    inline void mpi_check(int rc, const char* where, MPI_Comm comm) {
+        if (rc == MPI_SUCCESS) return;
+        int rank = 0;
+        MPI_Comm_rank(comm, &rank);
+        char errstr[MPI_MAX_ERROR_STRING]; int len=0;
+        MPI_Error_string(rc, errstr, &len);
+        std::cerr << "[r" << rank << "] MPI error at " << where << ": "
+                << std::string(errstr, len) << "\n";
+        MPI_Abort(comm, 1);
+    }
+} 
 
-// einheitliche MPI-Fehlerprüfung
-inline void mpi_check(int rc, const char* where, MPI_Comm comm) {
-    if (rc == MPI_SUCCESS) return;
-    int rank = 0;
-    MPI_Comm_rank(comm, &rank);
-    char errstr[MPI_MAX_ERROR_STRING]; int len=0;
-    MPI_Error_string(rc, errstr, &len);
-    std::cerr << "[r" << rank << "] MPI error at " << where << ": "
-              << std::string(errstr, len) << "\n";
-    MPI_Abort(comm, 1);
-}
-
-} // namespace
-
-// ---------- Lesen/Schreiben: Plain -----------
 
 void parallel_read_plain_chunk(const std::string& path,
                                const RowDist& dist,
@@ -180,8 +176,6 @@ void dump_frame_parallel(const std::string& path,
               "write_at_all frame", comm);
     mpi_check(MPI_File_close(&fh), "close frame", comm);
 }
-
-// ---------- Meta (kleine Files, Rank 0) ----------
 
 bool read_meta_rank0(const std::string& meta_path,
                      std::uint64_t& original_size,

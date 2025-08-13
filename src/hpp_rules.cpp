@@ -1,8 +1,5 @@
 #include "hpp_rules.hpp"
 
-// ----------------------------------------------
-// Forward declarations of functions
-// ----------------------------------------------
 uint8_t collision(uint8_t current_cell, bool is_wall)
 {
     if (is_wall)
@@ -65,9 +62,6 @@ uint8_t reflection(uint8_t current_cell, bool is_wall)
     return (current_cell & 0b11110000) | reflected;
 }
 
-// ----------------------------------------------
-// Backward declarations of functions
-// ----------------------------------------------
 uint8_t inverse_reflection(uint8_t current_cell, bool is_wall)
 {
     return reflection(current_cell, is_wall);
@@ -179,7 +173,7 @@ uint8_t applyRules(
         const uint8_t lf_ref = inverse_reflection(lf, w_lf);
         const uint8_t rt_ref = inverse_reflection(rt, w_rt);
 
-        // 2) inverse_propagate „in diese Zelle“ (entspricht deiner grid-weiten Variante):
+        // 2) inverse_propagate in Zelle (entspricht grid-weiten Variante):
         uint8_t prev = static_cast<uint8_t>(c_ref & 0b11110000);
 
         if (up_ref & 0b00001000) prev |= 0b00001000; // N  kommt von OBEN

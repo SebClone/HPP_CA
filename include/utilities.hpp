@@ -26,7 +26,7 @@ std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matr
 void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filename);
 
 // Wall-Masken
-Mask generateRandomWallMask(int grid_size, double wall_ratio = 0.1, uint32_t seed = std::random_device{}());
+Mask generateRandomWallMask(int grid_size, double wall_ratio = 0.1, uint32_t seed = 0);
 void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename);
 Mask loadWallMaskBinary(int grid_size, const std::string &filename);
 

@@ -9,7 +9,7 @@
 #include <vector>
 #include <type_traits>
 
-// ---------- CLI ----------
+// Hilfsfunktionen fürs CLI-Parsing
 static void assign_if_set_int(const char* optarg_c, int& out) {
     if (!optarg_c) return;
     char* endp = nullptr;
@@ -33,53 +33,56 @@ static void assign_if_set_double(const char* optarg_c, double& out) {
 
 void print_usage(const char* progname) {
     std::fprintf(stderr,
-R"(Usage: %s [--encrypt | --decrypt]
-       [--input file] [--enc-bin file] [--meta file] [--key file] [--output file]
-       [--iterations N] [--grid-size N] [--wall-density f] [--seed S]
-       [--dump-frames 0|1] [--frame-interval K]
-       [--atomic-io 0|1] [--reorder 0|1]
-       [-v | -q]
+        R"(Usage: %s [--encrypt | --decrypt]
+            [--input file] [--enc-bin file] [--meta file] [--key file] [--output file]
+            [--iterations N] [--grid-size N] [--wall-density f] [--seed S]
+            [--dump-frames 0|1] [--frame-interval K]
+            [--atomic-io 0|1] [--reorder 0|1]
+            [-v | -q]
 
-Modes (choose one; default: --decrypt):
-  --encrypt                 Verschlüsseln
-  --decrypt                 Entschlüsseln
+        Modes (choose one; default: --decrypt):
+        --encrypt                 Verschlüsseln
+        --decrypt                 Entschlüsseln
 
-I/O:
-  --input PATH              Klartext-Eingabe (Encrypt) [default: message.txt]
-  --enc-bin PATH            Cipher-Binärdatei [default: encrypted_full.bin]
-  --meta PATH               Meta-Datei [default: encrypted_full.meta]
-  --key PATH                Wandmaske [default: wall_mask.key]
-  --output PATH             Entschlüsselter Output [default: decrypted_message.txt]
+        I/O:
+        --input PATH              Klartext-Eingabe (Encrypt) [default: message.txt]
+        --enc-bin PATH            Cipher-Binärdatei [default: encrypted_full.bin]
+        --meta PATH               Meta-Datei [default: encrypted_full.meta]
+        --key PATH                Wandmaske [default: wall_mask.key]
+        --output PATH             Entschlüsselter Output [default: decrypted_message.txt]
 
-Rechnen:
-  --iterations N            Iterationen (default 1000)
-  --grid-size N             optionales Override der Rastergröße
-  --wall-density f          Dichte der Wände (Encrypt) (default 0.10)
-  --seed S                  RNG Seed (0 => auto)
+        Rechnen:
+        --iterations N            Iterationen (default 1000)
+        --grid-size N             optionales Override der Rastergröße
+        --wall-density f          Dichte der Wände (Encrypt) (default 0.10)
+        --seed S                  RNG Seed (0 => auto)
 
-Debug/Perf:
-  --dump-frames 0|1         Frames schreiben (default 1)
-  --frame-interval K        Intervall für Frames (default 5)
-  --atomic-io 0|1           MPI atomic I/O (default 0)
-  --reorder 0|1             MPI_Cart_create reorder (default 0)
-  -v                        verbose (mehr Logs auf Rank 0)
-  -q                        quiet
+        Debug/Perf:
+        --dump-frames 0|1         Frames schreiben (default 1)
+        --frame-interval K        Intervall für Frames (default 5)
+        --atomic-io 0|1           MPI atomic I/O (default 0)
+        --reorder 0|1             MPI_Cart_create reorder (default 0)
+        -v                        verbose (mehr Logs auf Rank 0)
+        -q                        quiet
 
-Examples:
-  %s --encrypt --input msg.txt --enc-bin out.bin --meta out.meta --key k.bin
-  %s --decrypt --enc-bin out.bin --meta out.meta --key k.bin --output clear.txt
-)",
-    progname, progname, progname);
+        Examples:
+        %s --encrypt --input msg.txt --enc-bin out.bin --meta out.meta --key k.bin
+        %s --decrypt --enc-bin out.bin --meta out.meta --key k.bin --output clear.txt
+        )",
+            progname, progname, progname);
 }
 
+// Zusammenbauen der Konfiguration aus Kommandozeilenargumenten und Broadcast an alle Ranks.
 AppConfig parse_args_or_default(int argc, char** argv, int mpi_rank) {
+    // Defaults übernehmen
     AppConfig cfg;
 
     if (mpi_rank != 0) {
-        // Non-Root: nichts parsen; Root broadcastet später den echten cfg.
+        // Non-Root: nichts parsen. Root broadcastet später die config.
         return cfg;
     }
 
+    // Optionstabelle
     static option long_opts[] = {
         {"encrypt",       no_argument,       nullptr,  1},
         {"decrypt",       no_argument,       nullptr,  2},
@@ -99,6 +102,7 @@ AppConfig parse_args_or_default(int argc, char** argv, int mpi_rank) {
         {nullptr,         0,                 nullptr,  0}
     };
 
+    // Optionen parsen
     int opt, long_idx;
     while ((opt = getopt_long(argc, argv, "vq", long_opts, &long_idx)) != -1) {
         switch (opt) {
@@ -126,12 +130,13 @@ AppConfig parse_args_or_default(int argc, char** argv, int mpi_rank) {
         }
     }
 
+    // Wähle nicht-deterministischen Seed, falls 0 angegeben (zeitbasiert)
     if (cfg.seed == 0) {
         auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         cfg.seed = static_cast<std::uint64_t>(now);
     }
 
-    // Minimaler Plausibilitätscheck auf Rank 0; harte Fehler lassen wir den Caller handeln.
+    // Minimaler Check der eingegebenen Konfiguration
     std::string err;
     if (!validate_config(cfg, err)) {
         std::cerr << "[r0] config error: " << err << "\n\n";
@@ -158,47 +163,48 @@ bool validate_config(const AppConfig& cfg, std::string& error_msg) {
         error_msg = "frame-interval must be > 0";
         return false;
     }
-    // Dateien: keine harte Prüfung hier; die I/O-Schicht prüft existence/size.
     (void)cfg;
     return true;
 }
 
-// ---------- Serialization für MPI_Bcast ----------
+// -----------------------------------------------------------------------------------------
+// Serialisierung der Konfiguration in ein Byte-Array - Deserialisierung zurück in AppConfig
+// -----------------------------------------------------------------------------------------
 
+// Hilfsfunktionen für Serialisierung/Deserialisierung
 namespace {
+    template <class T>
+    void push_pod(std::vector<std::uint8_t>& buf, const T& v) {
+        static_assert(std::is_trivially_copyable<T>::value, "POD only");
+        const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&v);
+        buf.insert(buf.end(), p, p + sizeof(T));
+    }
 
-template <class T>
-void push_pod(std::vector<std::uint8_t>& buf, const T& v) {
-    static_assert(std::is_trivially_copyable<T>::value, "POD only");
-    const std::uint8_t* p = reinterpret_cast<const std::uint8_t*>(&v);
-    buf.insert(buf.end(), p, p + sizeof(T));
-}
+    template <class T>
+    T read_pod(const std::vector<std::uint8_t>& buf, size_t& off) {
+        T v{};
+        std::memcpy(&v, buf.data() + off, sizeof(T));
+        off += sizeof(T);
+        return v;
+    }
 
-template <class T>
-T read_pod(const std::vector<std::uint8_t>& buf, size_t& off) {
-    T v{};
-    std::memcpy(&v, buf.data() + off, sizeof(T));
-    off += sizeof(T);
-    return v;
-}
+    void push_string(std::vector<std::uint8_t>& buf, const std::string& s) {
+        std::uint32_t n = static_cast<std::uint32_t>(s.size());
+        push_pod(buf, n);
+        buf.insert(buf.end(), s.begin(), s.end());
+    }
 
-void push_string(std::vector<std::uint8_t>& buf, const std::string& s) {
-    std::uint32_t n = static_cast<std::uint32_t>(s.size());
-    push_pod(buf, n);
-    buf.insert(buf.end(), s.begin(), s.end());
-}
+    std::string read_string(const std::vector<std::uint8_t>& buf, size_t& off) {
+        std::uint32_t n = read_pod<std::uint32_t>(buf, off);
+        std::string s;
+        s.resize(n);
+        if (n) std::memcpy(&s[0], buf.data() + off, n);
+        off += n;
+        return s;
+    }
+} 
 
-std::string read_string(const std::vector<std::uint8_t>& buf, size_t& off) {
-    std::uint32_t n = read_pod<std::uint32_t>(buf, off);
-    std::string s;
-    s.resize(n);
-    if (n) std::memcpy(&s[0], buf.data() + off, n);
-    off += n;
-    return s;
-}
-
-} // namespace
-
+// Serialisierung
 static std::vector<std::uint8_t> serialize_cfg(const AppConfig& c) {
     std::vector<std::uint8_t> b;
     b.reserve(256);
@@ -226,6 +232,7 @@ static std::vector<std::uint8_t> serialize_cfg(const AppConfig& c) {
     return b;
 }
 
+// Deserialisierung
 static AppConfig deserialize_cfg(const std::vector<std::uint8_t>& b) {
     AppConfig c;
     size_t off = 0;
@@ -252,6 +259,7 @@ static AppConfig deserialize_cfg(const std::vector<std::uint8_t>& b) {
     return c;
 }
 
+// Broadcast der Konfiguration an alle Ranks (mit call der Serialisierung/Deserialisierung)
 void bcast_config(AppConfig& cfg, int root, MPI_Comm comm) {
     int rank = 0;
     MPI_Comm_rank(comm, &rank);

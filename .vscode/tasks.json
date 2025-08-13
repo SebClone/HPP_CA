@@ -3,17 +3,17 @@
     "tasks": [
         {
             "label": "build MPI",
-            "type": "shell",                            
-            "command": "mpicxx",                         // MPI-Wrapper als Compiler
+            "type": "shell",
+            "command": "mpicxx",
             "args": [
-                "-std=c++17",                            
-                "-O2",                                   
-                "${file}",                               
+                "-std=c++17",
+                "-O2",
+                "${file}",
                 "-o",
                 "${fileDirname}/${fileBasenameNoExtension}"
             ],
             "options": {
-                "cwd": "${fileDirname}"                  
+                "cwd": "${fileDirname}"
             },
             "group": {
                 "kind": "build",
@@ -28,11 +28,23 @@
             "type": "shell",
             "command": "mpirun",
             "args": [
-                "-np", "4",                              
-                "${workspaceFolder}/encryptor"          
+                "-np",
+                "4",
+                "${workspaceFolder}/encryptor"
             ],
             "dependsOn": "build MPI",
             "group": "test"
+        },
+        {
+            "type": "cmake",
+            "label": "CMake: build",
+            "command": "build",
+            "targets": [
+                "[N/A - Select Kit]"
+            ],
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "CMake template build task"
         }
     ]
 }

@@ -28,7 +28,7 @@ void printGrid(const std::vector<std::vector<uint8_t>> &grid)
 
 std::vector<uint8_t> readFileBytes(const std::string &filename)
 {
-    std::ifstream file(filename, std::ios::binary); // open file in binary mode
+    std::ifstream file(filename, std::ios::binary);
     std::vector<uint8_t> data;
 
     if (!file)
@@ -37,14 +37,11 @@ std::vector<uint8_t> readFileBytes(const std::string &filename)
         return data;
     }
 
-    // Move to the end to get file size
     file.seekg(0, std::ios::end);
     size_t size = file.tellg();
 
-    // Resize vector to fit file contents
     data.resize(size);
 
-    // Go back to start and read data into vector
     file.seekg(0);
     file.read(reinterpret_cast<char *>(data.data()), size);
 
@@ -55,14 +52,12 @@ std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &da
 {
     size_t originalSize = data.size();
 
-    // Calculate the smallest square dimension that can hold all the data
     grid_size = static_cast<size_t>(std::ceil(std::sqrt(originalSize)));
     size_t paddedSize = grid_size * grid_size;
 
-    // Copy and pad the data with 0s if needed
     std::vector<uint8_t> padded = data;
     padded.resize(paddedSize, 0);
-    // Fill a 2D matrix with the padded data
+
     std::vector<std::vector<uint8_t>> matrix(grid_size, std::vector<uint8_t>(grid_size));
     for (size_t i = 0; i < paddedSize; ++i)
     {
@@ -96,34 +91,28 @@ void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filena
 
     for (uint8_t byte : data)
     {
-        file << static_cast<char>(byte); // Convert uint8_t to ASCII character
+        file << static_cast<char>(byte);
     }
 
     file.close();
 }
 
-// Speichert einen kompletten Zellautomaten-Frame als Binärdatei.
 void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
 {
-    // String-Stream, um den Dateinamen im gewünschten Format zu bauen
     std::ostringstream oss;
     oss << "frames/frame_" << std::setw(6) << std::setfill('0') << iter << ".bin";
 
     std::string filename = oss.str();
-    // Öffne die Datei im Binärmodus
     std::ofstream ofs(filename, std::ios::binary);
 
-    // Falls das Öffnen fehlschlägt, Fehlermeldung ausgeben und abbrechen
     if (!ofs)
     {
         std::cerr << "ERROR: could not open file '" << filename << "' for writing.\n";
         return;
     }
 
-    // Schreibe den kompletten Frame als Bytes in die Datei
     ofs.write(reinterpret_cast<const char *>(frame.data()), frame.size());
 
-    // Prüfe, ob beim Schreiben ein Fehler auftrat
     if (!ofs)
     {
         std::cerr << "ERROR: failed to write frame to '" << filename << "'\n";
@@ -132,6 +121,9 @@ void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
 
 Mask generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
 {
+    if (seed == 0) {
+        seed = static_cast<uint32_t>(std::random_device{}());
+    }
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
@@ -195,13 +187,6 @@ Mask loadWallMaskBinary(int grid_size, const std::string &filename)
     return wall_mask;
 }
 
-
-/*
- *-------------------------------------------------------
- * Functions for MPI communication
- * -------------------------------------------------------
- */
-
 void broadcastMask(Mask &mask, MPI_Comm comm)
 {
     int rows = mask.size();
@@ -209,7 +194,6 @@ void broadcastMask(Mask &mask, MPI_Comm comm)
     MPI_Bcast(&rows, 1, MPI_INT, 0, comm);
     MPI_Bcast(&cols, 1, MPI_INT, 0, comm);
 
-    // Auf Nicht-Root: Speicher für mask anlegen
     mask.resize(rows);
     for (int i = 0; i < rows; ++i)
     {
@@ -229,7 +213,6 @@ void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
         dst[i] = src[i];
     }
 }
-
 
 void saveBinary(const std::vector<uint8_t>& data, const char* filename)
 {
