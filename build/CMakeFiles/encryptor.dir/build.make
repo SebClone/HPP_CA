@@ -73,15 +73,15 @@ CMakeFiles/encryptor.dir/src/main.cpp.o: CMakeFiles/encryptor.dir/flags.make
 CMakeFiles/encryptor.dir/src/main.cpp.o: /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp
 CMakeFiles/encryptor.dir/src/main.cpp.o: CMakeFiles/encryptor.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/encryptor.dir/src/main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/encryptor.dir/src/main.cpp.o -MF CMakeFiles/encryptor.dir/src/main.cpp.o.d -o CMakeFiles/encryptor.dir/src/main.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/encryptor.dir/src/main.cpp.o -MF CMakeFiles/encryptor.dir/src/main.cpp.o.d -o CMakeFiles/encryptor.dir/src/main.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp
 
 CMakeFiles/encryptor.dir/src/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/encryptor.dir/src/main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp > CMakeFiles/encryptor.dir/src/main.cpp.i
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp > CMakeFiles/encryptor.dir/src/main.cpp.i
 
 CMakeFiles/encryptor.dir/src/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/encryptor.dir/src/main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp -o CMakeFiles/encryptor.dir/src/main.cpp.s
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/main.cpp -o CMakeFiles/encryptor.dir/src/main.cpp.s
 
 # Object files for target encryptor
 encryptor_OBJECTS = \
@@ -96,8 +96,8 @@ encryptor: libapp_config.a
 encryptor: libio.a
 encryptor: libutilities.a
 encryptor: libhpp_rules.a
-encryptor: /usr/lib/x86_64-linux-gnu/openmpi/lib/libmpi_cxx.so
-encryptor: /usr/lib/x86_64-linux-gnu/openmpi/lib/libmpi.so
+encryptor: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
+encryptor: /usr/lib/x86_64-linux-gnu/libpthread.a
 encryptor: CMakeFiles/encryptor.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable encryptor"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/encryptor.dir/link.txt --verbose=$(VERBOSE)

@@ -357,23 +357,13 @@ int main(int argc, char **argv) {
     for (auto &r : halo_reqs_B) MPI_Request_free(&r);
     MPI_Comm_free(&cart_comm);
 
-    /*
-    // Kopiere das Ergebnis in den lokalen Speicher (ohne Halo-Zellen)
-    std::vector<uint8_t> result_core(local_rows * grid_size);
-    for (int i = 0; i < local_rows; ++i)
-    {
-        copy_n_bytes(
-            (gridBufA)[i + 1].data(),
-            static_cast<std::size_t>(grid_size),
-            result_core.data() + i * grid_size);
-    }
-    */
 
-    std::vector<uint8_t> result_core(local_rows * grid_size);
+    // Kopiere das Ergebnis (ohne Halo-Zeilen) aus dem aktuellen Puffer in result_core
+    std::vector<uint8_t> result_core(static_cast<std::size_t>(local_rows) * grid_size);
     for (int i = 0; i < local_rows; ++i) {
         std::memcpy(
-            gridBufA.data() + idx(i + 1, 0),
             result_core.data() + static_cast<std::size_t>(i) * grid_size,
+            active_ptr        + idx(i + 1, 0),
             static_cast<std::size_t>(grid_size)
         );
     }

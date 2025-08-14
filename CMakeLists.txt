@@ -48,15 +48,7 @@ add_library(hpp_rules STATIC
 target_link_libraries(hpp_rules PUBLIC MPI::MPI_CXX)
 target_include_directories(hpp_rules PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
-# 7) Neue schnelle Regeln (Template-Definition + explizite Instanziierungen)
-add_library(hpp_rules_fast STATIC
-    src/hpp_rules_fast.cpp
-)
-# hpp_rules_fast ruft collision()/reflection() aus hpp_rules auf → dagegen linken
-target_link_libraries(hpp_rules_fast PUBLIC MPI::MPI_CXX hpp_rules)
-target_include_directories(hpp_rules_fast PUBLIC ${CMAKE_SOURCE_DIR}/include)
-
-# 8) Executable
+# 7) Executable
 add_executable(encryptor
     src/main.cpp
 )
@@ -66,22 +58,20 @@ target_link_libraries(encryptor
         io
         utilities
         hpp_rules
-        hpp_rules_fast
         MPI::MPI_CXX
 )
 
 target_include_directories(encryptor PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-# 9) OpenMP nur fürs Executable (dort sind die omp pragmas im Loop)
+# 8) OpenMP nur fürs Executable (dort sind die omp pragmas im Loop)
 if (OpenMP_CXX_FOUND)
     target_link_libraries(encryptor PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# 10) Release-Optimierungen / CPU-Vektorisierung
+# 9) Release-Optimierungen / CPU-Vektorisierung
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     # -O3 + -march=native für Hot-Code (main & fast-rules)
-    target_compile_options(encryptor     PRIVATE $<$<CONFIG:Release>:-O3 -march=native>)
-    target_compile_options(hpp_rules_fast PRIVATE $<$<CONFIG:Release>:-O3 -march=native>)
+    target_compile_options(encryptor     PRIVATE $<$<CONFIG:Release>:-O3 -march=native>) #Eventuell ändern auf -O3, -O2 oder -march=x86-64-v3 setzen
 elseif (MSVC)
     target_compile_options(encryptor      PRIVATE $<$<CONFIG:Release>:/O2>)
     target_compile_options(hpp_rules_fast PRIVATE $<$<CONFIG:Release>:/O2>)
@@ -90,9 +80,9 @@ elseif (MSVC)
     # target_compile_options(hpp_rules_fast PRIVATE $<$<CONFIG:Release>:/arch:AVX2>)
 endif()
 
-# 11) (optional) Sanitizer toggles:
+# 10) (optional) Sanitizer toggles:
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 if (ENABLE_ASAN AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(encryptor PRIVATE -fsanitize=address,undefined)
     target_link_options(encryptor PRIVATE -fsanitize=address,undefined)
-endif();
+endif()

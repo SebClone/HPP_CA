@@ -73,15 +73,15 @@ CMakeFiles/app_config.dir/src/app_config.cpp.o: CMakeFiles/app_config.dir/flags.
 CMakeFiles/app_config.dir/src/app_config.cpp.o: /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp
 CMakeFiles/app_config.dir/src/app_config.cpp.o: CMakeFiles/app_config.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/app_config.dir/src/app_config.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/app_config.dir/src/app_config.cpp.o -MF CMakeFiles/app_config.dir/src/app_config.cpp.o.d -o CMakeFiles/app_config.dir/src/app_config.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/app_config.dir/src/app_config.cpp.o -MF CMakeFiles/app_config.dir/src/app_config.cpp.o.d -o CMakeFiles/app_config.dir/src/app_config.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp
 
 CMakeFiles/app_config.dir/src/app_config.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/app_config.dir/src/app_config.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp > CMakeFiles/app_config.dir/src/app_config.cpp.i
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp > CMakeFiles/app_config.dir/src/app_config.cpp.i
 
 CMakeFiles/app_config.dir/src/app_config.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/app_config.dir/src/app_config.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp -o CMakeFiles/app_config.dir/src/app_config.cpp.s
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/app_config.cpp -o CMakeFiles/app_config.dir/src/app_config.cpp.s
 
 # Object files for target app_config
 app_config_OBJECTS = \

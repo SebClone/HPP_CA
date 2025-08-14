@@ -73,15 +73,15 @@ CMakeFiles/utilities.dir/src/utilities.cpp.o: CMakeFiles/utilities.dir/flags.mak
 CMakeFiles/utilities.dir/src/utilities.cpp.o: /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp
 CMakeFiles/utilities.dir/src/utilities.cpp.o: CMakeFiles/utilities.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/utilities.dir/src/utilities.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/utilities.dir/src/utilities.cpp.o -MF CMakeFiles/utilities.dir/src/utilities.cpp.o.d -o CMakeFiles/utilities.dir/src/utilities.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/utilities.dir/src/utilities.cpp.o -MF CMakeFiles/utilities.dir/src/utilities.cpp.o.d -o CMakeFiles/utilities.dir/src/utilities.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp
 
 CMakeFiles/utilities.dir/src/utilities.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/utilities.dir/src/utilities.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp > CMakeFiles/utilities.dir/src/utilities.cpp.i
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp > CMakeFiles/utilities.dir/src/utilities.cpp.i
 
 CMakeFiles/utilities.dir/src/utilities.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/utilities.dir/src/utilities.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp -o CMakeFiles/utilities.dir/src/utilities.cpp.s
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/utilities.cpp -o CMakeFiles/utilities.dir/src/utilities.cpp.s
 
 # Object files for target utilities
 utilities_OBJECTS = \

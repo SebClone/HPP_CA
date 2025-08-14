@@ -73,15 +73,15 @@ CMakeFiles/io.dir/src/io.cpp.o: CMakeFiles/io.dir/flags.make
 CMakeFiles/io.dir/src/io.cpp.o: /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp
 CMakeFiles/io.dir/src/io.cpp.o: CMakeFiles/io.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/io.dir/src/io.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/io.dir/src/io.cpp.o -MF CMakeFiles/io.dir/src/io.cpp.o.d -o CMakeFiles/io.dir/src/io.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/io.dir/src/io.cpp.o -MF CMakeFiles/io.dir/src/io.cpp.o.d -o CMakeFiles/io.dir/src/io.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp
 
 CMakeFiles/io.dir/src/io.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/io.dir/src/io.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp > CMakeFiles/io.dir/src/io.cpp.i
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp > CMakeFiles/io.dir/src/io.cpp.i
 
 CMakeFiles/io.dir/src/io.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/io.dir/src/io.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp -o CMakeFiles/io.dir/src/io.cpp.s
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/io.cpp -o CMakeFiles/io.dir/src/io.cpp.s
 
 # Object files for target io
 io_OBJECTS = \

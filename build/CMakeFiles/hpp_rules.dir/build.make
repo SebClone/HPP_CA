@@ -73,15 +73,15 @@ CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o: CMakeFiles/hpp_rules.dir/flags.mak
 CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o: /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp
 CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o: CMakeFiles/hpp_rules.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o -MF CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o.d -o CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o -MF CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o.d -o CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.o -c /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp
 
 CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp > CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.i
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp > CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.i
 
 CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp -o CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.s
+	/usr/bin/mpicxx $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/samorth/Dokumente/Parallel_Computing/HPP-Automaton/HPP_CA/src/hpp_rules.cpp -o CMakeFiles/hpp_rules.dir/src/hpp_rules.cpp.s
 
 # Object files for target hpp_rules
 hpp_rules_OBJECTS = \
