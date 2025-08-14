@@ -1,7 +1,7 @@
 #include "hpp_rules.hpp"
-#include "app_config.hpp"
 #include "io.hpp"
 #include "utilities.hpp"
+#include "config.hpp"
 
 #include <mpi.h>        // MPI_Init, MPI_Comm_*, MPI_* APIs
 #include <vector>       // std::vector
@@ -18,7 +18,7 @@
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask = std::vector<std::vector<uint8_t>>;
 
-constexpr int TAG_NS = 0;
+constexpr int TAG_NS = 0; // ????
 
 int main(int argc, char **argv) {
 
@@ -29,16 +29,19 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-    AppConfig cfg = parse_args_or_default(argc, argv, rank);
-    bcast_config(cfg, /*root=*/0, MPI_COMM_WORLD);
+    auto cfg = get_config();
+    std::string err;
+    if (!validate_config(cfg, err)) {
+        if (rank == 0) std::cerr << "ERROR: " << err << "\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    // Konfiguarationen casten?
 
     // Configs: Verhalten
     const bool doEncrypt      = (cfg.mode == AppMode::Encrypt); // true = Encrypt, false = Decrypt
     const int numIterations   = cfg.iterations;                 // Anzahl Iterationen
     const int frameInterval   = cfg.frame_interval;             // Frames speichern alle X Iterationen
     const bool dumpFrames     = cfg.dump_frames;                // true = Frames speichern, false = Frames nicht speichern
-    const bool cartReorder    = cfg.cart_reorder;               // true = MPI_Cart_create darf Ranks neu anordnen
-    const bool atomicIO       = cfg.atomic_io;                  // true = MPI_File_set_atomicity, false = nicht atomar
     const double wallDensity  = cfg.wall_density;               // % Wandzellen (0.0 - 1.0)
     const std::uint64_t seed  = cfg.seed;                       // seed für Wandzellen-Generierung (0 = zufälliger seed)
 
@@ -57,8 +60,6 @@ int main(int argc, char **argv) {
         std::cout << "Grid Size: " << cfg.grid_size << "\n";
         std::cout << "Frame Interval: " << frameInterval << "\n";
         std::cout << "Dump Frames: " << (dumpFrames ? "Yes" : "No") << "\n";
-        std::cout << "Atomic I/O: " << (atomicIO ? "Yes" : "No") << "\n";
-        std::cout << "Cart Reorder: " << (cartReorder ? "Yes" : "No") << "\n";
         std::cout << "Wall Density: " << wallDensity * 100.0 << "%\n";
         std::cout << "Seed: " << seed << "\n";
         std::cout << "Input File: " << inPlain << "\n";
@@ -72,8 +73,6 @@ int main(int argc, char **argv) {
 
     uint64_t originalSize = 0;
     int grid_size = 0;
-
-
 
     // Findet einen zu 64 Bit passenden MPI-Integer-Typ (für Portierbarkeit der originalSize Variablen)
     MPI_Datatype MPI_UINT64_MATCHED;
@@ -127,7 +126,6 @@ int main(int argc, char **argv) {
         MPI_Abort(MPI_COMM_WORLD, 2);
     }
 
-
     // Lege lokale Zeilen und globalen Offset für jeden Rank fest
     int rows_per_rank = grid_size / nprocs;
     int remainder = grid_size % nprocs;
@@ -145,11 +143,28 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> local_core(local_rows * grid_size);
 
     if (doEncrypt) {
-        parallel_read_plain_chunk(inPlain, dist, originalSize, local_core, atomicIO, MPI_COMM_WORLD);
+        parallel_read_plain_chunk(inPlain, dist, originalSize, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
     }
     else {
-        parallel_read_cipher_chunk(encBin, dist, paddedBytes, local_core, atomicIO, MPI_COMM_WORLD);
+        parallel_read_cipher_chunk(encBin, dist, paddedBytes, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
     }
+
+    // Rank 0 erzeugt die Wall-Mask oder lädt sie aus der Datei
+    Mask wall_mask;
+    if (rank == 0) {
+        if (doEncrypt) {
+            wall_mask = generateRandomWallMask(grid_size, wallDensity, seed);
+            saveWallMaskBinary(wall_mask, keyPath.c_str());
+            std::cout << "Wall mask generated and saved to " << keyPath << "\n";
+        } 
+        else {
+            wall_mask = loadWallMaskBinary(grid_size, keyPath.c_str());
+            std::cout << "Wall mask loaded from " << keyPath << "\n";
+        }
+    }
+
+    // Alle Ranks erhalten die Wall-Mask
+    broadcastMask(wall_mask, MPI_COMM_WORLD);
     
     // Flache doppel-Buffer für das Grid (mit Platz für Halo-Zellen)
     std::vector<uint8_t> gridBufA(static_cast<std::size_t>(local_rows + 2) * grid_size);
@@ -169,27 +184,10 @@ int main(int argc, char **argv) {
         );
     }
 
-    // Rank 0 erzeugt die Wall-Mask oder lädt sie aus der Datei
-    Mask wall_mask;
-    if (rank == 0) {
-        if (doEncrypt) {
-            wall_mask = generateRandomWallMask(grid_size, wallDensity, seed);
-            saveWallMaskBinary(wall_mask, keyPath.c_str());
-            std::cout << "Wall mask generated and saved to " << keyPath << "\n";
-        } 
-        else {
-            wall_mask = loadWallMaskBinary(grid_size, keyPath.c_str());
-            std::cout << "Wall mask loaded from " << keyPath << "\n";
-        }
-    }
-    // Alle Ranks erhalten die Wall-Mask
-    broadcastMask(wall_mask, MPI_COMM_WORLD);
-
-
     // MPI-Topologie für Nachbarschaftskommunikation
     int dims[1]     = { nprocs };   // 1D-Topologie mit nprocs Prozessen
     int periods[1]  = { 1 };        // 1 = periodisch (Torus), 0 = nicht periodisch
-    int reorder     = cartReorder;  // Darf MPI die Ranks neu anordnen für bessere Nachbarschaft? Bei Torus nicht erlaubt!!
+    int reorder     = 0;  // Darf MPI die Ranks neu anordnen für bessere Nachbarschaft? Bei Torus nicht erlaubt!!
     MPI_Comm cart_comm; 
     MPI_Cart_create(MPI_COMM_WORLD, 1, dims, periods, reorder, &cart_comm);
 
@@ -370,13 +368,13 @@ int main(int argc, char **argv) {
 
     // Ergebnis in Ausgabedatei schreiben (.bin für Encrypt, .txt für Decrypt)
     if (doEncrypt) {
-        parallel_write_cipher_chunk(encBin, dist, result_core, paddedBytes, atomicIO, MPI_COMM_WORLD);
+        parallel_write_cipher_chunk(encBin, dist, result_core, paddedBytes, /*atomic?*/ false, MPI_COMM_WORLD);
         if (rank == 0) {
             write_meta_rank0(metaPath, originalSize, static_cast<uint32_t>(grid_size));
         }
     } 
     else {
-        parallel_write_plain_trimmed(outPlain, dist, result_core, originalSize, atomicIO, MPI_COMM_WORLD);
+        parallel_write_plain_trimmed(outPlain, dist, result_core, originalSize, /*atomic?*/ false, MPI_COMM_WORLD);
     }
     
     // Zeiterfassung und Ausgabe

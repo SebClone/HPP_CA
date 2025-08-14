@@ -1,1 +1,0 @@
-/usr/bin/mpicxx -O3 -DNDEBUG CMakeFiles/encryptor.dir/src/main.cpp.o -o encryptor  libapp_config.a libio.a libutilities.a libhpp_rules.a /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so /usr/lib/x86_64-linux-gnu/libpthread.a 
