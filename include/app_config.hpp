@@ -8,10 +8,10 @@ enum class AppMode : uint8_t { Decrypt = 0, Encrypt = 1 };
 
 // Alle Konfigurationen für main.cpp und ihre Defaults
 struct AppConfig {
-    AppMode mode = AppMode::Decrypt;
+    AppMode mode = AppMode::Encrypt;
     int iterations = 1000;
     int grid_size = 0;          // 0 => automatisch aus Inputgröße
-    int frame_interval = 5;
+    int frame_interval = 10;
     int verbosity = 1;          // 0=quiet,1=normal,2=verbose
 
     std::string input  = "data/message.txt";
@@ -20,7 +20,7 @@ struct AppConfig {
     std::string key     = "data/wall_mask.key";
     std::string output  = "data/decrypted_message.txt";
 
-    bool dump_frames = true;
+    bool dump_frames = false;    // true = Frames speichern, false = Frames nicht speichern
     bool atomic_io = false;      // MPI_File_set_atomicity
     bool cart_reorder = false;   // MPI_Cart_create reorder
 

@@ -160,7 +160,7 @@ void dump_frame_parallel(const std::string& path,
     mpi_check(MPI_File_open(comm, path.c_str(),
                             MPI_MODE_WRONLY | MPI_MODE_CREATE,
                             MPI_INFO_NULL, &fh),
-              "open frame", comm);
+                            "open frame", comm);
     mpi_check(MPI_File_set_atomicity(fh, atomic_io ? 1 : 0), "set_atomicity frame", comm);
 
     int rank=0; MPI_Comm_rank(comm, &rank);
@@ -173,7 +173,7 @@ void dump_frame_parallel(const std::string& path,
     mpi_check(MPI_File_write_at_all(fh, byte_offset(dist), data.data(),
                                     static_cast<int>(data.size()),
                                     MPI_BYTE, MPI_STATUS_IGNORE),
-              "write_at_all frame", comm);
+                                    "write_at_all frame", comm);
     mpi_check(MPI_File_close(&fh), "close frame", comm);
 }
 

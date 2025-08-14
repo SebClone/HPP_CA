@@ -13,6 +13,7 @@
 #include <cstdio>       // std::snprintf
 #include <cstdint>      // std::uint64_t, std::uint8_t
 #include <cstddef>      // std::size_t
+#include <cstring>      // std::memcpy
 
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask = std::vector<std::vector<uint8_t>>;
@@ -48,10 +49,31 @@ int main(int argc, char **argv) {
     const std::string& keyPath   = cfg.key;
     const std::string& outPlain  = cfg.output;
 
+    // Ausgeben der Konfiguration
+    if (rank == 0) {
+        std::cout << "Configuration:\n";
+        std::cout << "Mode: " << (doEncrypt ? "Encrypt" : "Decrypt") << "\n";
+        std::cout << "Iterations: " << numIterations << "\n";
+        std::cout << "Grid Size: " << cfg.grid_size << "\n";
+        std::cout << "Frame Interval: " << frameInterval << "\n";
+        std::cout << "Dump Frames: " << (dumpFrames ? "Yes" : "No") << "\n";
+        std::cout << "Atomic I/O: " << (atomicIO ? "Yes" : "No") << "\n";
+        std::cout << "Cart Reorder: " << (cartReorder ? "Yes" : "No") << "\n";
+        std::cout << "Wall Density: " << wallDensity * 100.0 << "%\n";
+        std::cout << "Seed: " << seed << "\n";
+        std::cout << "Input File: " << inPlain << "\n";
+        std::cout << "Encrypted Binary File: " << encBin << "\n";
+        std::cout << "Meta File: " << metaPath << "\n";
+        std::cout << "Key File: " << keyPath << "\n";
+        std::cout << "Output File: " << outPlain << "\n";
+    }
+
     double t_start = MPI_Wtime();
 
     uint64_t originalSize = 0;
     int grid_size = 0;
+
+
 
     // Findet einen zu 64 Bit passenden MPI-Integer-Typ (für Portierbarkeit der originalSize Variablen)
     MPI_Datatype MPI_UINT64_MATCHED;
@@ -61,6 +83,7 @@ int main(int argc, char **argv) {
         MPI_UINT64_MATCHED = MPI_UNSIGNED_LONG_LONG;
     }
 
+    // Bestimmen der grid_size und der originalSize
     if (rank == 0) {
         if (doEncrypt) {
             // Encrypt: Rank 0 liest die Eingabedatei und bestimmt die Größe
@@ -112,7 +135,10 @@ int main(int argc, char **argv) {
     int offset_rows = rank * rows_per_rank + std::min(rank, remainder);
 
     // Wird an die Funktionen weitergegeben, um den lokalen Block zu beschreiben
-    RowDist dist{ .grid_size = grid_size, .local_rows = local_rows, .offset_rows = offset_rows };
+    RowDist dist{};
+    dist.grid_size   = grid_size;
+    dist.local_rows  = local_rows;
+    dist.offset_rows = offset_rows;
     const std::size_t paddedBytes = static_cast<std::size_t>(grid_size) * grid_size;
 
     // lokaler Speicher für den lokalen Block im Arbeitsspeicher des MPI-Ranks (ohne Halos)
@@ -122,19 +148,25 @@ int main(int argc, char **argv) {
         parallel_read_plain_chunk(inPlain, dist, originalSize, local_core, atomicIO, MPI_COMM_WORLD);
     }
     else {
-        parallel_read_cipher_chunk(encBin, dist, paddedBytes, local_core, /*atomic*/false, MPI_COMM_WORLD);
+        parallel_read_cipher_chunk(encBin, dist, paddedBytes, local_core, atomicIO, MPI_COMM_WORLD);
     }
     
-    // doppel-Buffer des Grids mit Platz für Halo-Zellen 
-    Matrix grid_current(local_rows + 2, std::vector<uint8_t>(grid_size));
-    Matrix grid_next = grid_current;
+    // Flache doppel-Buffer für das Grid (mit Platz für Halo-Zellen)
+    std::vector<uint8_t> gridBufA(static_cast<std::size_t>(local_rows + 2) * grid_size);
+    std::vector<uint8_t> gridBufB(static_cast<std::size_t>(local_rows + 2) * grid_size);
 
-    // Kopiere lokale Daten in den Grid-Buffer
+    // Index-Helfer (i: 0..local_rows+1 inklusive Halos)
+    auto idx = [gs = grid_size](int i, int j) -> std::size_t {
+        return static_cast<std::size_t>(i) * static_cast<std::size_t>(gs) + static_cast<std::size_t>(j);
+    };
+
+    // Kopiere den lokalen Block in das Grid (ohne Halos)
     for (int i = 0; i < local_rows; ++i) {
-        copy_n_bytes(
-            local_core.data() + i * grid_size,
-            static_cast<std::size_t>(grid_size),
-            grid_current[i + 1].data());
+        std::memcpy(
+            gridBufA.data() + idx(i + 1, 0),
+            local_core.data() + static_cast<std::size_t>(i) * grid_size,
+            static_cast<std::size_t>(grid_size)
+        );
     }
 
     // Rank 0 erzeugt die Wall-Mask oder lädt sie aus der Datei
@@ -166,54 +198,145 @@ int main(int argc, char **argv) {
     MPI_Cart_shift(cart_comm, 0, 1, &up, &down);
 
     // MPI- Requests für Halo-Zellen (4 pro Iteration und pro Grid (2x Receive, 2x Send, 2x Grid))
-    MPI_Request halo_reqs_current[4], halo_reqs_next[4];
-    MPI_Recv_init(grid_current[0].data(),               grid_size, MPI_BYTE, up,    TAG_NS, cart_comm, &halo_reqs_current[0]);
-    MPI_Recv_init(grid_current[local_rows + 1].data(),  grid_size, MPI_BYTE, down,  TAG_NS, cart_comm, &halo_reqs_current[1]);
-    MPI_Send_init(grid_current[1].data(),               grid_size, MPI_BYTE, up,    TAG_NS, cart_comm, &halo_reqs_current[2]);
-    MPI_Send_init(grid_current[local_rows].data(),      grid_size, MPI_BYTE, down,  TAG_NS, cart_comm, &halo_reqs_current[3]);
-    MPI_Recv_init(grid_next[0].data(),                  grid_size, MPI_BYTE, up,    TAG_NS, cart_comm, &halo_reqs_next[0]);
-    MPI_Recv_init(grid_next[local_rows + 1].data(),     grid_size, MPI_BYTE, down,  TAG_NS, cart_comm, &halo_reqs_next[1]);
-    MPI_Send_init(grid_next[1].data(),                  grid_size, MPI_BYTE, up,    TAG_NS, cart_comm, &halo_reqs_next[2]);
-    MPI_Send_init(grid_next[local_rows].data(),         grid_size, MPI_BYTE, down,  TAG_NS, cart_comm, &halo_reqs_next[3]);
+    MPI_Request halo_reqs_A[4], halo_reqs_B[4];
+    // Recvs/Sends für gridA
+    MPI_Recv_init(gridBufA.data() + idx(0,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_A[0]);
+    MPI_Recv_init(gridBufA.data() + idx(local_rows + 1,0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_A[1]);
+    MPI_Send_init(gridBufA.data() + idx(1,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_A[2]);
+    MPI_Send_init(gridBufA.data() + idx(local_rows,    0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_A[3]);
 
-    Matrix* active_grid = &grid_current;            // Quelle zum lesen (aktuelles Grid)
-    Matrix* target_grid = &grid_next;               // Ziel zum schreiben (nächstes Grid)
-    MPI_Request* active_reqs = halo_reqs_current;   // Aktiver Satz persistenter Halo-Requests (gehört zu grid_current / active_grid)
-    MPI_Request* inactive_reqs = halo_reqs_next;    // Anderer Satz Requests (für grid_next / target_grid). Wird nach jeder Iteration mit active_reqs geswapped
+    // Recvs/Sends für gridB
+    MPI_Recv_init(gridBufB.data() + idx(0,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_B[0]);
+    MPI_Recv_init(gridBufB.data() + idx(local_rows + 1,0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_B[1]);
+    MPI_Send_init(gridBufB.data() + idx(1,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_B[2]);
+    MPI_Send_init(gridBufB.data() + idx(local_rows,    0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_B[3]);
+
+    // Aktive/Passive Buffer- und Request-Sets
+    uint8_t*     active_ptr   = gridBufA.data();       
+    uint8_t*     target_ptr   = gridBufB.data();         
+    MPI_Request* active_reqs  = halo_reqs_A;  
+    MPI_Request* idle_reqs    = halo_reqs_B;
+
+
+    /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+    // Haupt-Loop: Iterationen der HPP-Regeln
+    // 1. Halo-Zellen tauschen (MPI_Send/MPI_Recv)
+    // 2. Innenzellen berechnen (mit applyRules)
+    // 3. Randzellen berechnen (benötigen Halo-Zellen)
+    // 4. Puffer tauschen (grid_current <-> grid_next)
+    // 5. Frames speichern (optional)
+    /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
     for (int iter = 0; iter < numIterations; ++iter) {
+        // 1) Halo-Transfers des aktuellen Puffers starten
         MPI_Startall(4, active_reqs);
 
-        // Innenbereich berechnen (benötigt keine Halo-Zellen)
+        // 2) Innenbereich berechnen (Zeilen 2..local_rows-1), braucht keine Halos
         if (local_rows >= 3) {
-            for (int i = 2; i <= local_rows - 1; i++) {
-                for (int j = 0; j < grid_size; ++j) {
-                    (*target_grid)[i][j] = applyRules(*active_grid, wall_mask, doEncrypt, i, j, offset_rows);
+            const int N = grid_size;
+
+            if (doEncrypt) {
+                #pragma omp parallel for schedule(static)
+                for (int i = 2; i <= local_rows - 1; ++i) {
+                    const int gr   = (offset_rows + (i - 1)) % N;       // globale Zeile
+                    const int gr_u = (gr - 1 + N) % N;                  // gr-1 (mod N)
+                    const int gr_d = (gr + 1) % N;                      // gr+1 (mod N)
+
+                    const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
+                    const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
+                    const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+
+                    uint8_t* __restrict tgt_row = target_ptr + idx(i, 0);
+
+                    #pragma omp simd
+                    for (int j = 0; j < N; ++j) {
+                        tgt_row[j] = applyRules_fast<true>(
+                            active_ptr, N, i, j, wrow, wrow_u, wrow_d
+                        );
+                    }
+                }
+            } else {
+                #pragma omp parallel for schedule(static)
+                for (int i = 2; i <= local_rows - 1; ++i) {
+                    const int gr   = (offset_rows + (i - 1)) % N;
+                    const int gr_u = (gr - 1 + N) % N;
+                    const int gr_d = (gr + 1) % N;
+
+                    const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
+                    const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
+                    const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+
+                    uint8_t* __restrict tgt_row = target_ptr + idx(i, 0);
+
+                    #pragma omp simd
+                    for (int j = 0; j < N; ++j) {
+                        tgt_row[j] = applyRules_fast<false>(
+                            active_ptr, N, i, j, wrow, wrow_u, wrow_d
+                        );
+                    }
                 }
             }
         }
 
+        // 3) Auf Halo-Transfers warten, dann Randzeilen (1 und local_rows)
         MPI_Waitall(4, active_reqs, MPI_STATUSES_IGNORE);
 
-        // Zellen im Randbereich berechnen (benötigen Halo-Zellen)
         if (local_rows >= 1) {
-            for (int j = 0; j < grid_size; ++j) {
-                (*target_grid)[1][j] = applyRules(*active_grid, wall_mask, doEncrypt, 1, j, offset_rows);
-            }
-        }
-        if (local_rows >= 2) {
-            for (int j = 0; j < grid_size; ++j) {
-                (*target_grid)[local_rows][j] = applyRules(*active_grid, wall_mask, doEncrypt, local_rows, j, offset_rows);
-            }
-        }
-        // Puffer und Requests tauschen
-        std::swap(active_grid, target_grid);
-        std::swap(active_reqs, inactive_reqs);
+            const int N    = grid_size;
+            const int gr   = (offset_rows + 0) % N;       // i==1 → globale Zeile offset_rows
+            const int gr_u = (gr - 1 + N) % N;
+            const int gr_d = (gr + 1) % N;
 
-        // Frames speichern
+            const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
+            const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
+            const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+
+            uint8_t* __restrict tgt1 = target_ptr + idx(1, 0);
+
+            if (doEncrypt) {
+                #pragma omp simd
+                for (int j = 0; j < N; ++j)
+                    tgt1[j] = applyRules_fast<true>(active_ptr, N, 1, j, wrow, wrow_u, wrow_d);
+            } else {
+                #pragma omp simd
+                for (int j = 0; j < N; ++j)
+                    tgt1[j] = applyRules_fast<false>(active_ptr, N, 1, j, wrow, wrow_u, wrow_d);
+            }
+        }
+
+        if (local_rows >= 2) {
+            const int N    = grid_size;
+            const int iL   = local_rows;
+            const int gr   = (offset_rows + (iL - 1)) % N;
+            const int gr_u = (gr - 1 + N) % N;
+            const int gr_d = (gr + 1) % N;
+
+            const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
+            const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
+            const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+
+            uint8_t* __restrict tgtL = target_ptr + idx(iL, 0);
+
+            if (doEncrypt) {
+                #pragma omp simd
+                for (int j = 0; j < N; ++j)
+                    tgtL[j] = applyRules_fast<true>(active_ptr, N, iL, j, wrow, wrow_u, wrow_d);
+            } else {
+                #pragma omp simd
+                for (int j = 0; j < N; ++j)
+                    tgtL[j] = applyRules_fast<false>(active_ptr, N, iL, j, wrow, wrow_u, wrow_d);
+            }
+        }
+
+        // 4) Puffer und Requests tauschen
+        std::swap(active_ptr, target_ptr);
+        std::swap(active_reqs, idle_reqs);
+    }
+    /*
+    // Frames speichern
         if (dumpFrames && (iter % frameInterval == 0 || iter == numIterations - 1)) {
             char fname[128];
-            std::snprintf(fname, sizeof(fname), "frame_%05d.bin", iter);
+            std::snprintf(fname, sizeof(fname), "results/frames/frame_%05d.bin", iter);
 
             std::vector<uint8_t> frame_core(local_rows * grid_size);
             for (int i = 0; i < local_rows; ++i) {
@@ -221,23 +344,38 @@ int main(int argc, char **argv) {
                             static_cast<std::size_t>(grid_size),
                             frame_core.data() + i * grid_size);
             }
-            dump_frame_parallel(fname, dist, frame_core, paddedBytes, /*atomic*/false, MPI_COMM_WORLD);
-        }
-    }
+            dump_frame_parallel(fname, dist, frame_core, paddedBytes, false, MPI_COMM_WORLD);
+        }*/
 
-    // Alle RRequests und den Topologie-Kommunikator freigeben
-    for (auto &r : halo_reqs_current) MPI_Request_free(&r);
-    for (auto &r : halo_reqs_next)    MPI_Request_free(&r);
+    /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+    /* Ende des Haupt-Loops */
+    /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+    // Alle Requests und den Topologie-Kommunikator freigeben
+    for (auto &r : halo_reqs_A) MPI_Request_free(&r);
+    for (auto &r : halo_reqs_B) MPI_Request_free(&r);
     MPI_Comm_free(&cart_comm);
 
+    /*
     // Kopiere das Ergebnis in den lokalen Speicher (ohne Halo-Zellen)
     std::vector<uint8_t> result_core(local_rows * grid_size);
     for (int i = 0; i < local_rows; ++i)
     {
         copy_n_bytes(
-            (*active_grid)[i + 1].data(),
+            (gridBufA)[i + 1].data(),
             static_cast<std::size_t>(grid_size),
             result_core.data() + i * grid_size);
+    }
+    */
+
+    std::vector<uint8_t> result_core(local_rows * grid_size);
+    for (int i = 0; i < local_rows; ++i) {
+        std::memcpy(
+            gridBufA.data() + idx(i + 1, 0),
+            result_core.data() + static_cast<std::size_t>(i) * grid_size,
+            static_cast<std::size_t>(grid_size)
+        );
     }
 
     // Ergebnis in Ausgabedatei schreiben (.bin für Encrypt, .txt für Decrypt)

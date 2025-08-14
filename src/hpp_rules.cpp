@@ -185,3 +185,83 @@ uint8_t applyRules(
         return inverse_collision(prev, w_c);
     }
 }
+
+
+
+// Template-Definition (eine Definition, sichtbar nur in dieser TU)
+template<bool ENCRYPT>
+inline uint8_t applyRules_fast(
+    const uint8_t* FAST_RESTRICT G,
+    int N,
+    int i, int j,
+    const uint8_t* FAST_RESTRICT wrow,
+    const uint8_t* FAST_RESTRICT wrow_up,
+    const uint8_t* FAST_RESTRICT wrow_dn
+)
+{
+    // Toroidales j-Indexing (ohne % für j±1)
+    const int jl = (j == 0   ? N - 1 : j - 1);
+    const int jr = (j == N-1 ? 0     : j + 1);
+
+    // Zeilenoffsets im flachen Speicher
+    const std::size_t row    = static_cast<std::size_t>(i)     * static_cast<std::size_t>(N);
+    const std::size_t row_up = static_cast<std::size_t>(i - 1) * static_cast<std::size_t>(N);
+    const std::size_t row_dn = static_cast<std::size_t>(i + 1) * static_cast<std::size_t>(N);
+
+    // Zellen lesen
+    const uint8_t c  = G[row    + j];
+    const uint8_t up = G[row_up + j];
+    const uint8_t dn = G[row_dn + j];
+    const uint8_t lf = G[row    + jl];
+    const uint8_t rt = G[row    + jr];
+
+    // Wand-Flags (Zeiger auf fertige Wall-Zeilen kommen von außen)
+    const bool w_c  = (wrow   [j ] != 0);
+    const bool w_up = (wrow_up[j ] != 0);
+    const bool w_dn = (wrow_dn[j ] != 0);
+    const bool w_lf = (wrow   [jl] != 0);
+    const bool w_rt = (wrow   [jr] != 0);
+
+    if constexpr (ENCRYPT) {
+        // ---------- vorwärts: collision -> propagate -> reflection ----------
+        const uint8_t c_col  = collision(c , w_c );
+        const uint8_t up_col = collision(up, w_up);
+        const uint8_t dn_col = collision(dn, w_dn);
+        const uint8_t lf_col = collision(lf, w_lf);
+        const uint8_t rt_col = collision(rt, w_rt);
+
+        uint8_t next = static_cast<uint8_t>(c_col & 0xF0); // obere 4 Bits behalten
+        if (up_col & 0x02) next |= 0x02; // SOUTH von oben
+        if (dn_col & 0x08) next |= 0x08; // NORTH von unten
+        if (lf_col & 0x04) next |= 0x04; // EAST  von links
+        if (rt_col & 0x01) next |= 0x01; // WEST  von rechts
+
+        return reflection(next, w_c);
+    } else {
+        // ---------- rückwärts: inv_reflection -> inv_propagate -> inv_collision ----------
+        const uint8_t c_ref  = inverse_reflection(c , w_c );
+        const uint8_t up_ref = inverse_reflection(up, w_up);
+        const uint8_t dn_ref = inverse_reflection(dn, w_dn);
+        const uint8_t lf_ref = inverse_reflection(lf, w_lf);
+        const uint8_t rt_ref = inverse_reflection(rt, w_rt);
+
+        uint8_t prev = static_cast<uint8_t>(c_ref & 0xF0);
+        if (up_ref & 0x08) prev |= 0x08; // N  von oben
+        if (dn_ref & 0x02) prev |= 0x02; // S  von unten
+        if (rt_ref & 0x04) prev |= 0x04; // E  von rechts
+        if (lf_ref & 0x01) prev |= 0x01; // W  von links
+
+        return inverse_collision(prev, w_c);
+    }
+}
+
+// Explizite Instanziierungen: erzeugen genau zwei Versionen (Encrypt & Decrypt)
+// Dadurch brauchen andere Übersetzungseinheiten nur den Header – sie instanziieren NICHT erneut.
+template uint8_t applyRules_fast<true>(
+    const uint8_t* FAST_RESTRICT, int, int, int,
+    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
+);
+template uint8_t applyRules_fast<false>(
+    const uint8_t* FAST_RESTRICT, int, int, int,
+    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
+);
