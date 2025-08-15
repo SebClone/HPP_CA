@@ -9,6 +9,11 @@
 #include <vector>
 #include <cstdint>
 
+// Für die Bildverarbeitung
+#include <iostream>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 void printBits(uint8_t value)
 {
     std::bitset<8> bits(value);
@@ -51,6 +56,23 @@ std::vector<uint8_t> readFileBytes(const std::string &filename)
     file.read(reinterpret_cast<char *>(data.data()), size);
 
     return data;
+}
+
+// Lädt ein Bild belibiges .png/ .jpg Bild als RGB-Daten
+std::vector<uint8_t> loadImageAsRGB(const std::string &filename, int &width, int &height, int &channels)
+{
+    unsigned char *data = stbi_load(filename.c_str(), &width, &height, &channels, 3);
+    if (!data)
+    {
+        std::cerr << "Fehler: Bild konnte nicht geladen werden: " << filename << std::endl;
+        return {};
+    }
+
+    size_t size = width * height * 3; // 3 Bytes pro Pixel (R, G, B)
+    std::vector<uint8_t> imgData(data, data + size);
+
+    stbi_image_free(data); // Speicher freigeben
+    return imgData;
 }
 
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, size_t &grid_size)
@@ -340,15 +362,14 @@ void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
     }
 }
 
-
 // Gekapselte Hauptlogik der HPP-Operationen
 uint8_t applyRules(
-    const Matrix& active_grid,
-    const Mask&   wall_mask,
-    bool          doEncrypt,   // true = vorwärts (Encrypt), false = rückwärts (Decrypt)
-    int           i,           // lokale Zeile im Subgitter (mit Halo): 1..local_rows
-    int           j,           // Spalte: 0..N-1
-    int           offset_rows) // globale Startzeile dieses Ranks (ohne Halo)
+    const Matrix &active_grid,
+    const Mask &wall_mask,
+    bool doEncrypt,  // true = vorwärts (Encrypt), false = rückwärts (Decrypt)
+    int i,           // lokale Zeile im Subgitter (mit Halo): 1..local_rows
+    int j,           // Spalte: 0..N-1
+    int offset_rows) // globale Startzeile dieses Ranks (ohne Halo)
 {
     const int N = static_cast<int>(wall_mask.size()); // quadratisches Gitter
 
@@ -363,25 +384,25 @@ uint8_t applyRules(
     const int jr = (j + 1) % N;     // rechts (torus)
 
     // Zellen laden (nur lesen!)
-    const uint8_t c  = active_grid[i ][j ];
-    const uint8_t up = active_grid[iu][j ];
-    const uint8_t dn = active_grid[id][j ];
-    const uint8_t lf = active_grid[i ][jl];
-    const uint8_t rt = active_grid[i ][jr];
+    const uint8_t c = active_grid[i][j];
+    const uint8_t up = active_grid[iu][j];
+    const uint8_t dn = active_grid[id][j];
+    const uint8_t lf = active_grid[i][jl];
+    const uint8_t rt = active_grid[i][jr];
 
     // Wand-Flags (Maske ist uint8_t → nonzero == true)
-    const bool w_c  = wall_mask[gr][gc] != 0;
+    const bool w_c = wall_mask[gr][gc] != 0;
     const bool w_up = wall_mask[(gr - 1 + N) % N][gc] != 0;
-    const bool w_dn = wall_mask[(gr + 1) % N][gc]     != 0;
-    const bool w_lf = wall_mask[gr][jl]               != 0;
-    const bool w_rt = wall_mask[gr][jr]               != 0;
+    const bool w_dn = wall_mask[(gr + 1) % N][gc] != 0;
+    const bool w_lf = wall_mask[gr][jl] != 0;
+    const bool w_rt = wall_mask[gr][jr] != 0;
 
     if (doEncrypt)
     {
         // ---------- VORWÄRTS: collision -> propagate (in diese Zielzelle sammeln) -> reflection ----------
 
         // 1) collision auf Zentrum + Nachbarn
-        const uint8_t c_col  = collision(c , w_c );
+        const uint8_t c_col = collision(c, w_c);
         const uint8_t up_col = collision(up, w_up);
         const uint8_t dn_col = collision(dn, w_dn);
         const uint8_t lf_col = collision(lf, w_lf);
@@ -391,10 +412,14 @@ uint8_t applyRules(
         //    obere 4 Bits vom Zentrum behalten, Richtungsbits aus kollidierten Nachbarn einsammeln
         uint8_t next = static_cast<uint8_t>(c_col & 0b11110000);
 
-        if (up_col & 0b00000010) next |= 0b00000010; // von oben kommt dessen SOUTH
-        if (dn_col & 0b00001000) next |= 0b00001000; // von unten kommt dessen NORTH
-        if (lf_col & 0b00000100) next |= 0b00000100; // von links kommt dessen EAST
-        if (rt_col & 0b00000001) next |= 0b00000001; // von rechts kommt dessen WEST
+        if (up_col & 0b00000010)
+            next |= 0b00000010; // von oben kommt dessen SOUTH
+        if (dn_col & 0b00001000)
+            next |= 0b00001000; // von unten kommt dessen NORTH
+        if (lf_col & 0b00000100)
+            next |= 0b00000100; // von links kommt dessen EAST
+        if (rt_col & 0b00000001)
+            next |= 0b00000001; // von rechts kommt dessen WEST
 
         // 3) reflection auf der Zielzelle
         return reflection(next, w_c);
@@ -404,7 +429,7 @@ uint8_t applyRules(
         // ---------- RÜCKWÄRTS: inverse_reflection -> inverse_propagate (sammeln) -> inverse_collision ----------
 
         // 1) inverse_reflection auf Zentrum + Nachbarn
-        const uint8_t c_ref  = inverse_reflection(c , w_c );
+        const uint8_t c_ref = inverse_reflection(c, w_c);
         const uint8_t up_ref = inverse_reflection(up, w_up);
         const uint8_t dn_ref = inverse_reflection(dn, w_dn);
         const uint8_t lf_ref = inverse_reflection(lf, w_lf);
@@ -413,42 +438,48 @@ uint8_t applyRules(
         // 2) inverse_propagate „in diese Zelle“ (entspricht deiner grid-weiten Variante):
         uint8_t prev = static_cast<uint8_t>(c_ref & 0b11110000);
 
-        if (up_ref & 0b00001000) prev |= 0b00001000; // N  kommt von OBEN
-        if (dn_ref & 0b00000010) prev |= 0b00000010; // S  kommt von UNTEN
-        if (rt_ref & 0b00000100) prev |= 0b00000100; // E  kommt von RECHTS
-        if (lf_ref & 0b00000001) prev |= 0b00000001; // W  kommt von LINKS
+        if (up_ref & 0b00001000)
+            prev |= 0b00001000; // N  kommt von OBEN
+        if (dn_ref & 0b00000010)
+            prev |= 0b00000010; // S  kommt von UNTEN
+        if (rt_ref & 0b00000100)
+            prev |= 0b00000100; // E  kommt von RECHTS
+        if (lf_ref & 0b00000001)
+            prev |= 0b00000001; // W  kommt von LINKS
 
         // 3) inverse_collision
         return inverse_collision(prev, w_c);
     }
 }
 
-void saveBinary(const std::vector<uint8_t>& data, const char* filename)
+void saveBinary(const std::vector<uint8_t> &data, const char *filename)
 {
     std::ofstream out(filename, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    out.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size()));
 }
 
-void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char* metaFilename)
+void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char *metaFilename)
 {
     std::ofstream out(metaFilename, std::ios::binary);
     const uint32_t magic = 0x48505031; // "HPP1"
     const uint32_t version = 1;
-    out.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-    out.write(reinterpret_cast<const char*>(&version), sizeof(version));
-    out.write(reinterpret_cast<const char*>(&originalSize), sizeof(originalSize));
-    out.write(reinterpret_cast<const char*>(&gridSize), sizeof(gridSize));
+    out.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
+    out.write(reinterpret_cast<const char *>(&version), sizeof(version));
+    out.write(reinterpret_cast<const char *>(&originalSize), sizeof(originalSize));
+    out.write(reinterpret_cast<const char *>(&gridSize), sizeof(gridSize));
 }
 
-bool loadEncryptedMeta(uint64_t& originalSize, uint32_t& gridSize, const char* metaFilename)
+bool loadEncryptedMeta(uint64_t &originalSize, uint32_t &gridSize, const char *metaFilename)
 {
     std::ifstream in(metaFilename, std::ios::binary);
-    if (!in) return false;
+    if (!in)
+        return false;
     uint32_t magic = 0, version = 0;
-    in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    in.read(reinterpret_cast<char*>(&version), sizeof(version));
-    if (magic != 0x48505031 || version != 1) return false;
-    in.read(reinterpret_cast<char*>(&originalSize), sizeof(originalSize));
-    in.read(reinterpret_cast<char*>(&gridSize), sizeof(gridSize));
+    in.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+    in.read(reinterpret_cast<char *>(&version), sizeof(version));
+    if (magic != 0x48505031 || version != 1)
+        return false;
+    in.read(reinterpret_cast<char *>(&originalSize), sizeof(originalSize));
+    in.read(reinterpret_cast<char *>(&gridSize), sizeof(gridSize));
     return static_cast<bool>(in);
 }

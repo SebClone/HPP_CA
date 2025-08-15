@@ -19,6 +19,8 @@ void save_frame_bin(const std::vector<uint8_t> &frame, int iter);
 
 // Binäres Einlesen
 std::vector<uint8_t> readFileBytes(const std::string &filename);
+// Lädt ein Bild belibiges .png/ .jpg Bild als RGB-Daten
+std::vector<uint8_t> loadImageAsRGB(const std::string &filename, int &width, int &height, int &channels);
 
 // Grid-Transformationen
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, size_t &grid_size);
@@ -48,14 +50,14 @@ void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst);
 
 // Gekapselte Hauptlogik der HPP-Operationen
 uint8_t applyRules(
-    const Matrix& active_grid,
-    const Mask&   wall_mask,
-    bool          doEncrypt,
-    int           i,
-    int           j,
-    int           offset_rows);
-void saveBinary(const std::vector<uint8_t>& data, const char* filename);
-void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char* metaFilename);
-bool loadEncryptedMeta(uint64_t& originalSize, uint32_t& gridSize, const char* metaFilename);
+    const Matrix &active_grid,
+    const Mask &wall_mask,
+    bool doEncrypt,
+    int i,
+    int j,
+    int offset_rows);
+void saveBinary(const std::vector<uint8_t> &data, const char *filename);
+void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char *metaFilename);
+bool loadEncryptedMeta(uint64_t &originalSize, uint32_t &gridSize, const char *metaFilename);
 
 #endif

@@ -14,6 +14,8 @@ constexpr int TAG_NS = 0;
 static constexpr const char *ENC_BIN = "encrypted_full.bin";
 static constexpr const char *ENC_META = "encrypted_full.meta";
 static constexpr const char *PLAIN_IN = "message.txt";
+static constexpr const char *IMG_IN = "image_message.png";        // Bild als message
+static constexpr const char *DECRYPT_IMG = "decrypted_image.png"; // Decrypted Bild
 static constexpr const char *DECRYPT_OUT = "decrypted_message.txt";
 
 #ifndef DUMP_FRAMES
@@ -47,8 +49,8 @@ int main(int argc, char **argv)
     {
         if (doEncrypt)
         {
-            // Klartext laden
-            fileData = readFileBytes(PLAIN_IN);
+            // fileData = readFileBytes(PLAIN_IN); // Klartext laden
+            fileData = readFileBytes(IMG_IN); // Bild laden
             if (fileData.empty())
             {
                 std::cerr << "ERROR: could not read input file '" << PLAIN_IN << "'\n";
@@ -308,10 +310,14 @@ int main(int argc, char **argv)
         }
         else
         {
-            // Rückgewonnenen Klartext auf Originalgröße kürzen und als Text speichern
-            result.resize(originalSize);
-            saveAsAsciiText(result, DECRYPT_OUT);
-            std::cout << "Saved " << DECRYPT_OUT << " (" << originalSize << " bytes)\n";
+            // // Rückgewonnenen Klartext auf Originalgröße kürzen und als Text speichern
+            // result.resize(originalSize);
+            // saveAsAsciiText(result, DECRYPT_OUT);
+            // std::cout << "Saved " << DECRYPT_OUT << " (" << originalSize << " bytes)\n";
+
+            result.resize(originalSize);     // resize to original size
+            saveBinary(result, DECRYPT_IMG); // write exact bytes back as binary (PNG/JPG)
+            std::cout << "Saved " << DECRYPT_IMG << " (" << originalSize << " bytes)\n";
         }
     }
 
