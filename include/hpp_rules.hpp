@@ -53,3 +53,4 @@ extern template uint8_t applyRules_fast<false>(
     const uint8_t* FAST_RESTRICT, int, int, int,
     const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
 );
+

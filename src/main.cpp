@@ -18,7 +18,7 @@
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask = std::vector<std::vector<uint8_t>>;
 
-constexpr int TAG_NS = 0; // ????
+constexpr int TAG_NS = 100;
 
 int main(int argc, char **argv) {
 
@@ -30,12 +30,13 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
     auto cfg = get_config();
+    cfg.mode = parse_mode_from_cli(argc, argv, cfg.mode);
     std::string err;
     if (!validate_config(cfg, err)) {
         if (rank == 0) std::cerr << "ERROR: " << err << "\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-    // Konfiguarationen casten?
+    // Konfiguarationen broadcasten?
 
     // Configs: Verhalten
     const bool doEncrypt      = (cfg.mode == AppMode::Encrypt); // true = Encrypt, false = Decrypt

@@ -80,3 +80,21 @@ inline bool validate_config(const AppConfig& cfg, std::string& error_msg) {
     (void)cfg;
     return true;
 }
+
+static AppMode parse_mode_from_cli(int argc, char** argv, AppMode deflt) {
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--mode" || a == "-m") {
+            if (i + 1 < argc) {
+                const std::string v = argv[++i];
+                if (v == "encrypt" || v == "enc" || v == "e")  return AppMode::Encrypt;
+                if (v == "decrypt" || v == "dec" || v == "d")  return AppMode::Decrypt;
+            }
+        } else if (a == "--encrypt" || a == "-E") {
+            return AppMode::Encrypt;
+        } else if (a == "--decrypt" || a == "-D") {
+            return AppMode::Decrypt;
+        }
+    }
+    return deflt;
+}
