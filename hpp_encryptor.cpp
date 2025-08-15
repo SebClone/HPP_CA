@@ -131,7 +131,7 @@ void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
 {
     // String-Stream, um den Dateinamen im gewünschten Format zu bauen
     std::ostringstream oss;
-    oss << "frames/frame_" << std::setw(6) << std::setfill('0') << iter << ".bin";
+    oss << "frames/binary/frame_" << std::setw(6) << std::setfill('0') << iter << ".bin";
 
     std::string filename = oss.str();
     // Öffne die Datei im Binärmodus

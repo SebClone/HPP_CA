@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <fstream>
 
 using Matrix = std::vector<std::vector<uint8_t>>;
 
@@ -21,6 +22,36 @@ static constexpr const char *DECRYPT_OUT = "decrypted_message.txt";
 #ifndef DUMP_FRAMES
 #define DUMP_FRAMES 1
 #endif
+
+// Save a gathered N x N grid as a binary PGM (P5) so Python can read it easily.
+// Each byte is treated as an 8-bit grayscale pixel.
+static void save_frame_pgm(const std::vector<uint8_t> &buf, int N, int iter)
+{
+    // Construct filename: frames/pgm/frame_0000.pgm
+    char name[128];
+    std::snprintf(name, sizeof(name), "frames/pgm/frame_%04d.pgm", iter);
+    std::ofstream out(name, std::ios::binary);
+    if (!out)
+    {
+        std::cerr << "ERROR: could not open " << name << " for writing\n";
+        return;
+    }
+    // PGM header
+    out << "P5\n"
+        << N << " " << N << "\n255\n";
+    // If the buffer size is smaller than N*N (shouldn't happen here), pad with zeros.
+    if (buf.size() < static_cast<size_t>(N) * static_cast<size_t>(N))
+    {
+        out.write(reinterpret_cast<const char *>(buf.data()), buf.size());
+        std::vector<uint8_t> pad(static_cast<size_t>(N) * static_cast<size_t>(N) - buf.size(), 0);
+        out.write(reinterpret_cast<const char *>(pad.data()), pad.size());
+    }
+    else
+    {
+        out.write(reinterpret_cast<const char *>(buf.data()), static_cast<std::streamsize>(N) * static_cast<std::streamsize>(N));
+    }
+    out.close();
+}
 
 int main(int argc, char **argv)
 {
@@ -265,6 +296,8 @@ int main(int argc, char **argv)
             if (rank == 0)
             {
                 save_frame_bin(frame, iter);
+                // Also save a viewable grayscale frame for visualization/simulation in Python.
+                save_frame_pgm(frame, grid_size, iter);
             }
         }
 #endif

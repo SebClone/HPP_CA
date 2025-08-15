@@ -60,75 +60,6 @@ def plot_frame(frame_data, title, gridsize, cmap='gray'):
     plt.savefig(f"visualization_results/{title.replace(' ', '_')}.png", dpi=300, bbox_inches='tight')
     plt.show()
 
-def grid_to_bytes_from_nibbles(cells_uint8: np.ndarray,
-                               order: str = "hi-lo",
-                               original_size: Optional[int] = None) -> bytes:
-    """
-    Rekonstruiert die ursprünglichen Datei-Bytes aus CA-Zellwerten (0..15 pro Zelle).
-    Erwartet: 1 Byte pro Zelle im Dump (Wertbereich 0..15).
-    order: 'hi-lo'  -> Byte = (cells[0]<<4) | cells[1]
-           'lo-hi'  -> Byte = (cells[1]<<4) | cells[0]
-    """
-    # Nur die unteren 4 Bit verwenden – Sicherheitshalber maskieren
-    cells = (cells_uint8 & 0x0F).astype(np.uint8)
-
-    # Paare bilden: (0,1), (2,3), ...
-    hi = cells[0::2]
-    lo = cells[1::2]
-
-    if order == "hi-lo":
-        out = (hi << 4) | lo
-    elif order == "lo-hi":
-        out = (lo << 4) | hi
-    else:
-        raise ValueError("order must be 'hi-lo' or 'lo-hi'")
-
-    if original_size is not None:
-        out = out[:original_size]
-
-    return out.tobytes()
-
-def show_frame_decoded_from_grid(frame_cells: np.ndarray,
-                                 N: int,
-                                 original_size: int,
-                                 order: str = "hi-lo",
-                                 title: str = "decoded from grid"):
-    """
-    Baut aus einem Gitter-Frame (Zellenwerte) wieder die Datei-Bytes,
-    decodiert sie als Bild und zeigt das RGB-Bild an.
-    Hinweis: Das ergibt *nur* beim letzten Frame eines erfolgreichen Decrypts
-    einen gültigen PNG/JPG-Stream.
-    """
-    # First try to treat frame_cells[:original_size] as complete image file
-    try:
-        file_bytes = frame_cells[:original_size].tobytes()
-        im = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-        arr = np.array(im)
-        plt.imshow(arr)
-        plt.title(f"{title} ({im.width}×{im.height})")
-        plt.axis("off")
-        plt.show()
-        return
-    except UnidentifiedImageError:
-        pass
-
-    # Falls der Dump gepackt war (N*N/2 Bytes): erst Nibbles entpacken
-    if frame_cells.size == (N * N) // 2:
-        # hier liegen bereits gepaarte Nibbles je Byte vor -> direkt kürzen
-        file_bytes = frame_cells[:original_size].tobytes()
-    elif frame_cells.size == (N * N):
-        # 1 Zelle pro Byte (Wert 0..15): zu Bytes packen
-        file_bytes = grid_to_bytes_from_nibbles(frame_cells, order, original_size)
-    else:
-        raise ValueError(f"Unerwartete Framegröße: {frame_cells.size} (N={N})")
-
-    # Bild aus Bytes decodieren
-    im = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    arr = np.array(im)
-    plt.imshow(arr)
-    plt.title(f"{title} ({im.width}×{im.height})")
-    plt.axis("off")
-    plt.show()
 
 def plot_frame_diff(frame_a, frame_b, gridsize, title=None, cmap='bwr'):
     arr_a = frame_a.reshape((gridsize, gridsize)).astype(np.int16)
@@ -240,14 +171,15 @@ plot_benchmark_data(processes, times)
 # %% Load grid data
 frames = {}
 from pathlib import Path
-folder_path = Path("frames")
+folder_path_binary = Path("frames/binary")
 # Find all .bin files, sort them, and load into frames dict
-bin_files = sorted(folder_path.glob("*.bin"))
+bin_files = sorted(folder_path_binary.glob("*.bin"))
 for bin_file in bin_files:
     # Remove suffix to get frame name
     frame_name = bin_file.stem
     arr = np.fromfile(bin_file, dtype=np.uint8)
     frames[frame_name] = arr
+
 
 # %% Calculate grid size
 example_frame = next(iter(frames.values()))
@@ -277,17 +209,3 @@ if isText:
     frame0 = frames['frame_000000']
     frame999 = frames['frame_000999']
     plot_frame_diff(frame0, frame999, grid_size, title="Pixelweise Differenz (uint8)")
-else:
-    print("Data is an image")
-    show_frame_decoded_from_grid(last_frame, N=grid_size,
-                                original_size=original_size,
-                                order="hi-lo",
-                                title="Frame 999 (decoded)")
-
-# Animate all frames and save as MP4
-if saveAnimation & isText:
-    print("Saving animations...")
-    animate_frames(frames, grid_size, outfile='visualization_results/grid_frames_visualization.mp4', fps=20, cmap='gray')
-    animate_frame_diffs(frames, grid_size, outfile='visualization_results/frames_diff_visualization.mp4', fps=20, cmap='bwr')
-
-
