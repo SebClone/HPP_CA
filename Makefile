@@ -1,16 +1,41 @@
+# --- OpenMP automatic use for macOS---
+# For macOS users: find latest g++ version and use it as OMP compiler (istall via homebrew if needed)
+ifeq ($(shell uname),Darwin)
+  DETECTED_GCC := $(shell command -v g++-14 || command -v g++-13 || command -v g++-12)
+  ifneq ($(DETECTED_GCC),)
+    export OMPI_CXX=$(DETECTED_GCC)
+  endif
+endif
+
+#
+# --- Ensure CXX is MPI wrapper if default or c++/clang++ from environment ---
+ifeq ($(origin CXX),default)
+  CXX := mpic++
+endif
+ifeq ($(origin CXX),environment)
+  ifeq ($(CXX),c++)
+    CXX := mpic++
+  endif
+  ifeq ($(CXX),clang++)
+    CXX := mpic++
+  endif
+endif
+
+# -------------------------------------------
 # --- Basis-Konfig ---
-# MPI-Compiler (Wrapper)
 CXX        ?= mpic++
 TARGET     ?= hpp_mpi_app
 
 # Quellcode: alle .cpp im Verzeichnis (alte app_config.cpp ggf. ausschließen)
 EXCLUDE_SRCS ?=
 SRCS       := $(filter-out $(EXCLUDE_SRCS),$(wildcard *.cpp))
+SRCS       := $(filter-out $(EXCLUDE_SRCS),$(wildcard src/*.cpp))
 OBJS       := $(SRCS:.cpp=.o)
 DEPS       := $(OBJS:.o=.d)
 
 # Includes (anpassen/erweitern, falls du z. B. ein include/-Verzeichnis nutzt)
-CPPFLAGS   ?= -I.
+# CPPFLAGS   ?= -I.
+CPPFLAGS   ?= -I. -Isrc -Iinclude
 
 # C++-Standard und Warnungen
 BASEFLAGS  := -std=c++20 -Wall -Wextra -Wpedantic
@@ -68,6 +93,7 @@ run: $(TARGET)
 # Zeigt aktuelle Einstellungen
 info:
 	@echo "CXX      = $(CXX)"
+	@echo "OMPI_CXX = $(OMPI_CXX)"
 	@echo "TARGET   = $(TARGET)"
 	@echo "SRCS     = $(SRCS)"
 	@echo "CXXFLAGS = $(CXXFLAGS)"
