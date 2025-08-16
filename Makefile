@@ -99,10 +99,22 @@ clean:
 NP       ?= 4          # Anzahl MPI-Prozesse
 RUN_ARGS ?=            # z.B. --bind-to core --map-by core
 APP_ARGS ?=            # z.B. --decrypt oder -m encrypt
+GRID     ?= 50         # Default grid size (override with GRID=64)
+ITERS    ?=            # Optional number of iterations 
+ITERS_ARG := $(if $(strip $(ITERS)),--iters $(ITERS),)
 
 # Start: mpirun mit RUN_ARGS, Programm bekommt APP_ARGS
 run: $(TARGET)
-	mpirun -np $(NP) $(RUN_ARGS) ./$(TARGET) $(APP_ARGS)
+	mpirun -np $(NP) $(RUN_ARGS) ./$(TARGET) -g $(GRID) $(ITERS_ARG) $(APP_ARGS)
+
+# Komfortable Targets für Verschlüsselung/Entschlüsselung
+# make encrypt NP=6 GRID=64 ITERS=2000   # hier Grid vorgeben
+# make decrypt NP=6           # hier nur NP, Grid kommt aus Meta
+encrypt: $(TARGET)
+	mpirun -np $(NP) $(RUN_ARGS) ./$(TARGET) -g $(GRID) $(ITERS_ARG) --encrypt $(APP_ARGS)
+
+decrypt: $(TARGET)
+	mpirun -np $(NP) $(RUN_ARGS) ./$(TARGET) -g $(GRID) $(ITERS_ARG) --decrypt $(APP_ARGS)
 
 # Komfort: clean + run
 rerun: clean run
@@ -122,4 +134,7 @@ info:
 	@echo "OMP       = $(OMP)"
 	@echo "NP        = $(NP)"
 	@echo "RUN_ARGS  = $(RUN_ARGS)"
+	@echo "GRID      = $(GRID)"
+	@echo "ITERS     = $(ITERS)"
+	@echo "ITERS_ARG = $(ITERS_ARG)"
 	@echo "APP_ARGS  = $(APP_ARGS)"
