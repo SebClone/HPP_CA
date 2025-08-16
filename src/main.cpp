@@ -3,24 +3,30 @@
 #include "utilities.hpp"
 #include "config.hpp"
 
-#include <mpi.h>        // MPI_Init, MPI_Comm_*, MPI_* APIs
-#include <vector>       // std::vector
-#include <string>       // std::string
-#include <iostream>     // std::cout, std::cerr
-#include <iomanip>      // std::fixed, std::setprecision
-#include <algorithm>    // std::min
-#include <cmath>        // std::ceil, std::sqrt
-#include <cstdio>       // std::snprintf
-#include <cstdint>      // std::uint64_t, std::uint8_t
-#include <cstddef>      // std::size_t
-#include <cstring>      // std::memcpy
+#include <mpi.h>     // MPI_Init, MPI_Comm_*, MPI_* APIs
+#include <vector>    // std::vector
+#include <string>    // std::string
+#include <iostream>  // std::cout, std::cerr
+#include <iomanip>   // std::fixed, std::setprecision
+#include <algorithm> // std::min
+#include <cmath>     // std::ceil, std::sqrt
+#include <cstdio>    // std::snprintf
+#include <cstdint>   // std::uint64_t, std::uint8_t
+#include <cstddef>   // std::size_t
+#include <cstring>   // std::memcpy
 
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask = std::vector<std::vector<uint8_t>>;
 
-constexpr int TAG_NS = 100;
+// constexpr int TAG_NS = 100; // Old MPI-Tag für Nachbarschaftskommunikation
+// Neu: Spezielle Tags um Mehrdeutigkeit beim Austausch der Buffer zu vermeiden
+constexpr int TAG_FROM_UP_A = 100;
+constexpr int TAG_FROM_DOWN_A = 101;
+constexpr int TAG_FROM_UP_B = 102;
+constexpr int TAG_FROM_DOWN_B = 103;
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 
     // Initialisieren von MPI und Config
     MPI_Init(&argc, &argv);
@@ -32,29 +38,32 @@ int main(int argc, char **argv) {
     auto cfg = get_config();
     cfg.mode = parse_mode_from_cli(argc, argv, cfg.mode);
     std::string err;
-    if (!validate_config(cfg, err)) {
-        if (rank == 0) std::cerr << "ERROR: " << err << "\n";
+    if (!validate_config(cfg, err))
+    {
+        if (rank == 0)
+            std::cerr << "ERROR: " << err << "\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     // Konfiguarationen broadcasten?
 
     // Configs: Verhalten
-    const bool doEncrypt      = (cfg.mode == AppMode::Encrypt); // true = Encrypt, false = Decrypt
-    const int numIterations   = cfg.iterations;                 // Anzahl Iterationen
-    const int frameInterval   = cfg.frame_interval;             // Frames speichern alle X Iterationen
-    const bool dumpFrames     = cfg.dump_frames;                // true = Frames speichern, false = Frames nicht speichern
-    const double wallDensity  = cfg.wall_density;               // % Wandzellen (0.0 - 1.0)
-    const std::uint64_t seed  = cfg.seed;                       // seed für Wandzellen-Generierung (0 = zufälliger seed)
+    const bool doEncrypt = (cfg.mode == AppMode::Encrypt); // true = Encrypt, false = Decrypt
+    const int numIterations = cfg.iterations;              // Anzahl Iterationen
+    const int frameInterval = cfg.frame_interval;          // Frames speichern alle X Iterationen
+    const bool dumpFrames = cfg.dump_frames;               // true = Frames speichern, false = Frames nicht speichern
+    const double wallDensity = cfg.wall_density;           // % Wandzellen (0.0 - 1.0)
+    const std::uint64_t seed = cfg.seed;                   // seed für Wandzellen-Generierung (0 = zufälliger seed)
 
     // Configs: Eingabe- und Ausgabe
-    const std::string& inPlain   = cfg.input;
-    const std::string& encBin    = cfg.enc_bin;
-    const std::string& metaPath  = cfg.meta;
-    const std::string& keyPath   = cfg.key;
-    const std::string& outPlain  = cfg.output;
+    const std::string &inPlain = cfg.input;
+    const std::string &encBin = cfg.enc_bin;
+    const std::string &metaPath = cfg.meta;
+    const std::string &keyPath = cfg.key;
+    const std::string &outPlain = cfg.output;
 
     // Ausgeben der Konfiguration
-    if (rank == 0) {
+    if (rank == 0)
+    {
         std::cout << "Configuration:\n";
         std::cout << "Mode: " << (doEncrypt ? "Encrypt" : "Decrypt") << "\n";
         std::cout << "Iterations: " << numIterations << "\n";
@@ -78,17 +87,21 @@ int main(int argc, char **argv) {
     // Findet einen zu 64 Bit passenden MPI-Integer-Typ (für Portierbarkeit der originalSize Variablen)
     MPI_Datatype MPI_UINT64_MATCHED;
     int rc = MPI_Type_match_size(MPI_TYPECLASS_INTEGER, 8, &MPI_UINT64_MATCHED);
-    if (rc != MPI_SUCCESS) {
+    if (rc != MPI_SUCCESS)
+    {
         static_assert(sizeof(unsigned long long) == 8, "Need 64-bit unsigned long long");
         MPI_UINT64_MATCHED = MPI_UNSIGNED_LONG_LONG;
     }
 
     // Bestimmen der grid_size und der originalSize
-    if (rank == 0) {
-        if (doEncrypt) {
+    if (rank == 0)
+    {
+        if (doEncrypt)
+        {
             // Encrypt: Rank 0 liest die Eingabedatei und bestimmt die Größe
             MPI_File fhin;
-            if (MPI_File_open(MPI_COMM_SELF, inPlain.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fhin) != MPI_SUCCESS) {
+            if (MPI_File_open(MPI_COMM_SELF, inPlain.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fhin) != MPI_SUCCESS)
+            {
                 std::cerr << "ERROR: could not open input file '" << inPlain.c_str() << "'\n";
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
@@ -96,7 +109,8 @@ int main(int argc, char **argv) {
             MPI_File_get_size(fhin, &fsz);
             MPI_File_close(&fhin);
 
-            if (fsz < 0) {
+            if (fsz < 0)
+            {
                 std::cerr << "ERROR: invalid size for '" << inPlain.c_str() << "'\n";
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
@@ -105,15 +119,17 @@ int main(int argc, char **argv) {
             std::cout << "Encrypting mode selected.\n";
             std::cout << "Read size " << originalSize << " bytes from " << inPlain.c_str()
                       << ", grid size = " << grid_size << std::endl;
-        } 
-        else {
+        }
+        else
+        {
             // Decrypt: Rank 0 liest die Meta-Datei und bestimmt die Größe
             uint32_t Nmeta = 0;
-            if (!read_meta_rank0(metaPath, originalSize, Nmeta)) {
+            if (!read_meta_rank0(metaPath, originalSize, Nmeta))
+            {
                 std::cerr << "ERROR: could not read meta file '" << metaPath << "'\n";
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
-        grid_size = static_cast<int>(Nmeta);
+            grid_size = static_cast<int>(Nmeta);
         }
     }
 
@@ -122,8 +138,10 @@ int main(int argc, char **argv) {
     MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Vorsichtsmaßnahme für zu kleine grid_size (noch kein Fallback implementiert!!!)
-    if (nprocs > grid_size) {
-        if (rank == 0) std::cerr << "nprocs > grid_size: mindestens ein Rank bekäme 0 Zeilen – für Torus ungültig.\n";
+    if (nprocs > grid_size)
+    {
+        if (rank == 0)
+            std::cerr << "nprocs > grid_size: mindestens ein Rank bekäme 0 Zeilen – für Torus ungültig.\n";
         MPI_Abort(MPI_COMM_WORLD, 2);
     }
 
@@ -135,87 +153,106 @@ int main(int argc, char **argv) {
 
     // Wird an die Funktionen weitergegeben, um den lokalen Block zu beschreiben
     RowDist dist{};
-    dist.grid_size   = grid_size;
-    dist.local_rows  = local_rows;
+    dist.grid_size = grid_size;
+    dist.local_rows = local_rows;
     dist.offset_rows = offset_rows;
     const std::size_t paddedBytes = static_cast<std::size_t>(grid_size) * grid_size;
 
     // lokaler Speicher für den lokalen Block im Arbeitsspeicher des MPI-Ranks (ohne Halos)
     std::vector<uint8_t> local_core(local_rows * grid_size);
 
-    if (doEncrypt) {
+    if (doEncrypt)
+    {
         parallel_read_plain_chunk(inPlain, dist, originalSize, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
     }
-    else {
+    else
+    {
         parallel_read_cipher_chunk(encBin, dist, paddedBytes, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
     }
 
     // Rank 0 erzeugt die Wall-Mask oder lädt sie aus der Datei
+    MPI_Barrier(MPI_COMM_WORLD);
     Mask wall_mask;
-    if (rank == 0) {
-        if (doEncrypt) {
+    if (rank == 0)
+    {
+        if (doEncrypt)
+        {
             wall_mask = generateRandomWallMask(grid_size, wallDensity, seed);
             saveWallMaskBinary(wall_mask, keyPath.c_str());
             std::cout << "Wall mask generated and saved to " << keyPath << "\n";
-        } 
-        else {
+        }
+        else
+        {
             wall_mask = loadWallMaskBinary(grid_size, keyPath.c_str());
             std::cout << "Wall mask loaded from " << keyPath << "\n";
         }
     }
 
-    // Alle Ranks erhalten die Wall-Mask
-    broadcastMask(wall_mask, MPI_COMM_WORLD);
-    
+    // --- Robuster Broadcast der Wall-Mask als flacher Byte-Puffer ---
+    // Wir senden N*N Bytes (uint8_t) in Row-Major. Nested vectors sind nicht contiguous, daher flatten.
+    std::vector<uint8_t> wall_flat;
+    wall_flat.resize(static_cast<std::size_t>(grid_size) * grid_size);
+
+    if (rank == 0)
+    {
+        for (int r = 0; r < grid_size; ++r)
+        {
+            std::memcpy(wall_flat.data() + static_cast<std::size_t>(r) * grid_size,
+                        wall_mask[r].data(),
+                        static_cast<std::size_t>(grid_size));
+        }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Alle Ranks erhalten N*N Bytes
+    MPI_Bcast(wall_flat.data(), static_cast<int>(wall_flat.size()), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+    // Auf Nicht-Root die verschickte Maske wieder in 2D-Form bringen
+    if (rank != 0)
+    {
+        wall_mask.assign(static_cast<std::size_t>(grid_size), std::vector<uint8_t>(grid_size));
+        for (int r = 0; r < grid_size; ++r)
+        {
+            std::memcpy(wall_mask[r].data(),
+                        wall_flat.data() + static_cast<std::size_t>(r) * grid_size,
+                        static_cast<std::size_t>(grid_size));
+        }
+    }
+    // --- Ende: robuster Broadcast ---
+
     // Flache doppel-Buffer für das Grid (mit Platz für Halo-Zellen)
     std::vector<uint8_t> gridBufA(static_cast<std::size_t>(local_rows + 2) * grid_size);
     std::vector<uint8_t> gridBufB(static_cast<std::size_t>(local_rows + 2) * grid_size);
 
     // Index-Helfer (i: 0..local_rows+1 inklusive Halos)
-    auto idx = [gs = grid_size](int i, int j) -> std::size_t {
+    auto idx = [gs = grid_size](int i, int j) -> std::size_t
+    {
         return static_cast<std::size_t>(i) * static_cast<std::size_t>(gs) + static_cast<std::size_t>(j);
     };
 
     // Kopiere den lokalen Block in das Grid (ohne Halos)
-    for (int i = 0; i < local_rows; ++i) {
+    for (int i = 0; i < local_rows; ++i)
+    {
         std::memcpy(
             gridBufA.data() + idx(i + 1, 0),
             local_core.data() + static_cast<std::size_t>(i) * grid_size,
-            static_cast<std::size_t>(grid_size)
-        );
+            static_cast<std::size_t>(grid_size));
     }
 
     // MPI-Topologie für Nachbarschaftskommunikation
-    int dims[1]     = { nprocs };   // 1D-Topologie mit nprocs Prozessen
-    int periods[1]  = { 1 };        // 1 = periodisch (Torus), 0 = nicht periodisch
-    int reorder     = 0;  // Darf MPI die Ranks neu anordnen für bessere Nachbarschaft? Bei Torus nicht erlaubt!!
-    MPI_Comm cart_comm; 
+    int dims[1] = {nprocs}; // 1D-Topologie mit nprocs Prozessen
+    int periods[1] = {1};   // 1 = periodisch (Torus), 0 = nicht periodisch
+    int reorder = 0;        // Darf MPI die Ranks neu anordnen für bessere Nachbarschaft? Bei Torus nicht erlaubt!!
+    MPI_Comm cart_comm;
     MPI_Cart_create(MPI_COMM_WORLD, 1, dims, periods, reorder, &cart_comm);
 
     // Rank IDs der Nachbarn (oben, unten) für Halo-Zellen Austausch
     int up, down;
     MPI_Cart_shift(cart_comm, 0, 1, &up, &down);
 
-    // MPI- Requests für Halo-Zellen (4 pro Iteration und pro Grid (2x Receive, 2x Send, 2x Grid))
-    MPI_Request halo_reqs_A[4], halo_reqs_B[4];
-    // Recvs/Sends für gridA
-    MPI_Recv_init(gridBufA.data() + idx(0,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_A[0]);
-    MPI_Recv_init(gridBufA.data() + idx(local_rows + 1,0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_A[1]);
-    MPI_Send_init(gridBufA.data() + idx(1,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_A[2]);
-    MPI_Send_init(gridBufA.data() + idx(local_rows,    0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_A[3]);
-
-    // Recvs/Sends für gridB
-    MPI_Recv_init(gridBufB.data() + idx(0,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_B[0]);
-    MPI_Recv_init(gridBufB.data() + idx(local_rows + 1,0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_B[1]);
-    MPI_Send_init(gridBufB.data() + idx(1,             0), grid_size, MPI_BYTE, up,   TAG_NS, cart_comm, &halo_reqs_B[2]);
-    MPI_Send_init(gridBufB.data() + idx(local_rows,    0), grid_size, MPI_BYTE, down, TAG_NS, cart_comm, &halo_reqs_B[3]);
-
-    // Aktive/Passive Buffer- und Request-Sets
-    uint8_t*     active_ptr   = gridBufA.data();       
-    uint8_t*     target_ptr   = gridBufB.data();         
-    MPI_Request* active_reqs  = halo_reqs_A;  
-    MPI_Request* idle_reqs    = halo_reqs_B;
-
+    // Wir nutzen pro Iteration nicht-persistente, nicht-blockierende Kommunikation für die Halo-Zellen.
+    uint8_t *active_ptr = gridBufA.data(); // Aktueller Buffer (enthält die aktiven Zellen)
+    uint8_t *target_ptr = gridBufB.data(); // Neuer Buffer für die Ergebnisse
 
     /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
     // Haupt-Loop: Iterationen der HPP-Regeln
@@ -226,110 +263,134 @@ int main(int argc, char **argv) {
     // 5. Frames speichern (optional)
     /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-    for (int iter = 0; iter < numIterations; ++iter) {
-        // 1) Halo-Transfers des aktuellen Puffers starten
-        MPI_Startall(4, active_reqs);
+    for (int iter = 0; iter < numIterations; ++iter)
+    {
+        // 1) Halo-Transfers des aktuellen Puffers starten (nicht-persistenter Speicher)
+        MPI_Request reqs[4]; // 2x Irecv, 2x Isend
+        const bool useA = (active_ptr == gridBufA.data());
+        const int TAG_UP = useA ? TAG_FROM_UP_A : TAG_FROM_UP_B;
+        const int TAG_DOWN = useA ? TAG_FROM_DOWN_A : TAG_FROM_DOWN_B;
+
+        // Post receives in die Halo-Zeilen von active_ptr
+        MPI_Irecv(active_ptr + idx(0, 0), grid_size, MPI_BYTE, up, TAG_UP, cart_comm, &reqs[0]);
+        MPI_Irecv(active_ptr + idx(local_rows + 1, 0), grid_size, MPI_BYTE, down, TAG_DOWN, cart_comm, &reqs[1]);
+        // Post sends aus den Randzeilen von active_ptr
+        MPI_Isend(active_ptr + idx(1, 0), grid_size, MPI_BYTE, up, TAG_DOWN, cart_comm, &reqs[2]);
+        MPI_Isend(active_ptr + idx(local_rows, 0), grid_size, MPI_BYTE, down, TAG_UP, cart_comm, &reqs[3]);
 
         // 2) Innenbereich berechnen (Zeilen 2..local_rows-1), braucht keine Halos
-        if (local_rows >= 3) {
+        if (local_rows >= 3)
+        {
             const int N = grid_size;
 
-            if (doEncrypt) {
-                #pragma omp parallel for schedule(static)
-                for (int i = 2; i <= local_rows - 1; ++i) {
-                    const int gr   = (offset_rows + (i - 1)) % N;       // globale Zeile
-                    const int gr_u = (gr - 1 + N) % N;                  // gr-1 (mod N)
-                    const int gr_d = (gr + 1) % N;                      // gr+1 (mod N)
+            if (doEncrypt)
+            {
+#pragma omp parallel for schedule(static)
+                for (int i = 2; i <= local_rows - 1; ++i)
+                {
+                    const int gr = (offset_rows + (i - 1)) % N; // globale Zeile
+                    const int gr_u = (gr - 1 + N) % N;          // gr-1 (mod N)
+                    const int gr_d = (gr + 1) % N;              // gr+1 (mod N)
 
-                    const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
-                    const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
-                    const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+                    const uint8_t *__restrict wrow = wall_mask[gr].data();
+                    const uint8_t *__restrict wrow_u = wall_mask[gr_u].data();
+                    const uint8_t *__restrict wrow_d = wall_mask[gr_d].data();
 
-                    uint8_t* __restrict tgt_row = target_ptr + idx(i, 0);
+                    uint8_t *__restrict tgt_row = target_ptr + idx(i, 0);
 
-                    #pragma omp simd
-                    for (int j = 0; j < N; ++j) {
+#pragma omp simd
+                    for (int j = 0; j < N; ++j)
+                    {
                         tgt_row[j] = applyRules_fast<true>(
-                            active_ptr, N, i, j, wrow, wrow_u, wrow_d
-                        );
+                            active_ptr, N, i, j, wrow, wrow_u, wrow_d);
                     }
                 }
-            } else {
-                #pragma omp parallel for schedule(static)
-                for (int i = 2; i <= local_rows - 1; ++i) {
-                    const int gr   = (offset_rows + (i - 1)) % N;
+            }
+            else
+            {
+#pragma omp parallel for schedule(static)
+                for (int i = 2; i <= local_rows - 1; ++i)
+                {
+                    const int gr = (offset_rows + (i - 1)) % N;
                     const int gr_u = (gr - 1 + N) % N;
                     const int gr_d = (gr + 1) % N;
 
-                    const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
-                    const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
-                    const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+                    const uint8_t *__restrict wrow = wall_mask[gr].data();
+                    const uint8_t *__restrict wrow_u = wall_mask[gr_u].data();
+                    const uint8_t *__restrict wrow_d = wall_mask[gr_d].data();
 
-                    uint8_t* __restrict tgt_row = target_ptr + idx(i, 0);
+                    uint8_t *__restrict tgt_row = target_ptr + idx(i, 0);
 
-                    #pragma omp simd
-                    for (int j = 0; j < N; ++j) {
+#pragma omp simd
+                    for (int j = 0; j < N; ++j)
+                    {
                         tgt_row[j] = applyRules_fast<false>(
-                            active_ptr, N, i, j, wrow, wrow_u, wrow_d
-                        );
+                            active_ptr, N, i, j, wrow, wrow_u, wrow_d);
                     }
                 }
             }
         }
 
         // 3) Auf Halo-Transfers warten, dann Randzeilen (1 und local_rows)
-        MPI_Waitall(4, active_reqs, MPI_STATUSES_IGNORE);
+        MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
 
-        if (local_rows >= 1) {
-            const int N    = grid_size;
-            const int gr   = (offset_rows + 0) % N;       // i==1 → globale Zeile offset_rows
+        if (local_rows >= 1)
+        {
+            const int N = grid_size;
+            const int gr = (offset_rows + 0) % N; // i==1 → globale Zeile offset_rows
             const int gr_u = (gr - 1 + N) % N;
             const int gr_d = (gr + 1) % N;
 
-            const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
-            const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
-            const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+            const uint8_t *__restrict wrow = wall_mask[gr].data();
+            const uint8_t *__restrict wrow_u = wall_mask[gr_u].data();
+            const uint8_t *__restrict wrow_d = wall_mask[gr_d].data();
 
-            uint8_t* __restrict tgt1 = target_ptr + idx(1, 0);
+            uint8_t *__restrict tgt1 = target_ptr + idx(1, 0);
 
-            if (doEncrypt) {
-                #pragma omp simd
+            if (doEncrypt)
+            {
+#pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgt1[j] = applyRules_fast<true>(active_ptr, N, 1, j, wrow, wrow_u, wrow_d);
-            } else {
-                #pragma omp simd
+            }
+            else
+            {
+#pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgt1[j] = applyRules_fast<false>(active_ptr, N, 1, j, wrow, wrow_u, wrow_d);
             }
         }
 
-        if (local_rows >= 2) {
-            const int N    = grid_size;
-            const int iL   = local_rows;
-            const int gr   = (offset_rows + (iL - 1)) % N;
+        if (local_rows >= 2)
+        {
+            const int N = grid_size;
+            const int iL = local_rows;
+            const int gr = (offset_rows + (iL - 1)) % N;
             const int gr_u = (gr - 1 + N) % N;
             const int gr_d = (gr + 1) % N;
 
-            const uint8_t* __restrict wrow   = wall_mask[gr  ].data();
-            const uint8_t* __restrict wrow_u = wall_mask[gr_u].data();
-            const uint8_t* __restrict wrow_d = wall_mask[gr_d].data();
+            const uint8_t *__restrict wrow = wall_mask[gr].data();
+            const uint8_t *__restrict wrow_u = wall_mask[gr_u].data();
+            const uint8_t *__restrict wrow_d = wall_mask[gr_d].data();
 
-            uint8_t* __restrict tgtL = target_ptr + idx(iL, 0);
+            uint8_t *__restrict tgtL = target_ptr + idx(iL, 0);
 
-            if (doEncrypt) {
-                #pragma omp simd
+            if (doEncrypt)
+            {
+#pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgtL[j] = applyRules_fast<true>(active_ptr, N, iL, j, wrow, wrow_u, wrow_d);
-            } else {
-                #pragma omp simd
+            }
+            else
+            {
+#pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgtL[j] = applyRules_fast<false>(active_ptr, N, iL, j, wrow, wrow_u, wrow_d);
             }
         }
 
-        // 4) Puffer und Requests tauschen
+        // 4) Puffer tauschen
         std::swap(active_ptr, target_ptr);
-        std::swap(active_reqs, idle_reqs);
     }
     /*
     // Frames speichern
@@ -350,34 +411,33 @@ int main(int argc, char **argv) {
     /* Ende des Haupt-Loops */
     /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-
     // Alle Requests und den Topologie-Kommunikator freigeben
-    for (auto &r : halo_reqs_A) MPI_Request_free(&r);
-    for (auto &r : halo_reqs_B) MPI_Request_free(&r);
     MPI_Comm_free(&cart_comm);
-
 
     // Kopiere das Ergebnis (ohne Halo-Zeilen) aus dem aktuellen Puffer in result_core
     std::vector<uint8_t> result_core(static_cast<std::size_t>(local_rows) * grid_size);
-    for (int i = 0; i < local_rows; ++i) {
+    for (int i = 0; i < local_rows; ++i)
+    {
         std::memcpy(
             result_core.data() + static_cast<std::size_t>(i) * grid_size,
-            active_ptr        + idx(i + 1, 0),
-            static_cast<std::size_t>(grid_size)
-        );
+            active_ptr + idx(i + 1, 0),
+            static_cast<std::size_t>(grid_size));
     }
 
     // Ergebnis in Ausgabedatei schreiben (.bin für Encrypt, .txt für Decrypt)
-    if (doEncrypt) {
+    if (doEncrypt)
+    {
         parallel_write_cipher_chunk(encBin, dist, result_core, paddedBytes, /*atomic?*/ false, MPI_COMM_WORLD);
-        if (rank == 0) {
+        if (rank == 0)
+        {
             write_meta_rank0(metaPath, originalSize, static_cast<uint32_t>(grid_size));
         }
-    } 
-    else {
+    }
+    else
+    {
         parallel_write_plain_trimmed(outPlain, dist, result_core, originalSize, /*atomic?*/ false, MPI_COMM_WORLD);
     }
-    
+
     // Zeiterfassung und Ausgabe
     double t_end = MPI_Wtime();
     if (rank == 0)
@@ -390,4 +450,3 @@ int main(int argc, char **argv) {
     MPI_Finalize();
     return 0;
 }
-
