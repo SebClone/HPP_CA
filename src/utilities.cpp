@@ -1,4 +1,4 @@
-#include "utilities.hpp"  
+#include "utilities.hpp"
 
 #include <bitset>
 #include <iostream>
@@ -121,7 +121,8 @@ void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
 
 Mask generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
 {
-    if (seed == 0) {
+    if (seed == 0)
+    {
         seed = static_cast<uint32_t>(std::random_device{}());
     }
     std::mt19937 rng(seed);
@@ -214,32 +215,49 @@ void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
     }
 }
 
-void saveBinary(const std::vector<uint8_t>& data, const char* filename)
+void saveBinary(const std::vector<uint8_t> &data, const char *filename)
 {
     std::ofstream out(filename, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    out.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size()));
 }
 
-void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char* metaFilename)
+void saveEncryptedMeta(uint64_t originalSize,
+                       uint32_t gridSize,
+                       uint64_t startOffset,
+                       const char *metaFilename)
 {
     std::ofstream out(metaFilename, std::ios::binary);
     const uint32_t magic = 0x48505031; // "HPP1"
-    const uint32_t version = 1;
-    out.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-    out.write(reinterpret_cast<const char*>(&version), sizeof(version));
-    out.write(reinterpret_cast<const char*>(&originalSize), sizeof(originalSize));
-    out.write(reinterpret_cast<const char*>(&gridSize), sizeof(gridSize));
+    const uint32_t version = 2;        // Version 2: mit StartOffset
+    out.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
+    out.write(reinterpret_cast<const char *>(&version), sizeof(version));
+    out.write(reinterpret_cast<const char *>(&originalSize), sizeof(originalSize));
+    out.write(reinterpret_cast<const char *>(&gridSize), sizeof(gridSize));
+    out.write(reinterpret_cast<const char *>(&startOffset), sizeof(startOffset));
 }
 
-bool loadEncryptedMeta(uint64_t& originalSize, uint32_t& gridSize, const char* metaFilename)
+bool loadEncryptedMeta(uint64_t &originalSize,
+                       uint32_t &gridSize,
+                       uint64_t &startOffset,
+                       const char *metaFilename)
 {
     std::ifstream in(metaFilename, std::ios::binary);
-    if (!in) return false;
+    if (!in)
+        return false;
     uint32_t magic = 0, version = 0;
-    in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    in.read(reinterpret_cast<char*>(&version), sizeof(version));
-    if (magic != 0x48505031 || version != 1) return false;
-    in.read(reinterpret_cast<char*>(&originalSize), sizeof(originalSize));
-    in.read(reinterpret_cast<char*>(&gridSize), sizeof(gridSize));
+    in.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+    in.read(reinterpret_cast<char *>(&version), sizeof(version));
+    if (magic != 0x48505031 || version != 1)
+        return false;
+    in.read(reinterpret_cast<char *>(&originalSize), sizeof(originalSize));
+    in.read(reinterpret_cast<char *>(&gridSize), sizeof(gridSize));
     return static_cast<bool>(in);
+    if (version >= 2)
+    {
+        in.read(reinterpret_cast<char *>(&startOffset), sizeof(startOffset));
+    }
+    else
+    {
+        startOffset = 0; // Abwärtskompatibilität: Version 1 kennt das Feld nicht
+    }
 }

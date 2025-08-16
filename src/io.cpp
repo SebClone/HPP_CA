@@ -33,33 +33,41 @@ namespace
 
 void parallel_read_plain_chunk(const std::string &path,
                                const RowDist &dist,
-                               std::uint64_t global_plain_size,
+                               std::uint64_t original_size,
+                               std::uint64_t start_offset,
                                std::vector<std::uint8_t> &out,
                                bool atomic_io,
                                MPI_Comm comm)
 {
-    out.assign(local_bytes(dist), 0); // init mit 0 (Padding)
+    const std::uint64_t base = (std::uint64_t)dist.offset_rows * dist.grid_size;
+    const std::uint64_t len = (std::uint64_t)dist.local_rows * dist.grid_size;
+    const std::uint64_t end = base + len;
+
+    // Nachrichtenbereich [start_offset, start_offset + original_size)
+    const std::uint64_t msgL = start_offset;
+    const std::uint64_t msgR = start_offset + original_size;
+
+    // Overlap [L,R)
+    const std::uint64_t L = std::max(base, msgL);
+    const std::uint64_t R = std::min(end, msgR);
+
+    out.assign((std::size_t)len, 0); // Pre-Fill mit 0 (Padding)
 
     MPI_File fh;
     mpi_check(MPI_File_open(comm, path.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fh), "open plain", comm);
     mpi_check(MPI_File_set_atomicity(fh, atomic_io ? 1 : 0), "set_atomicity plain", comm);
 
-    const MPI_Offset base = byte_offset(dist);
-    const std::size_t want = local_bytes(dist);
-
-    std::size_t to_read = 0;
-    if (static_cast<std::uint64_t>(base) < global_plain_size)
+    if (R > L)
     {
-        const auto remain = global_plain_size - static_cast<std::uint64_t>(base);
-        to_read = static_cast<std::size_t>(std::min<std::uint64_t>(want, remain));
+        const std::uint64_t read_bytes = R - L;
+        const MPI_Offset file_off = (MPI_Offset)(L - msgL);   // Input-File startet bei 0
+        const std::size_t dest_off = (std::size_t)(L - base); // Position im lokalen Puffer
+        mpi_check(MPI_File_read_at(fh, file_off,
+                                   out.data() + dest_off,
+                                   (int)read_bytes, MPI_BYTE, MPI_STATUS_IGNORE),
+                  "read_at plain(centered)", comm);
     }
 
-    if (to_read > 0)
-    {
-        mpi_check(MPI_File_read_at_all(fh, base, out.data(),
-                                       static_cast<int>(to_read), MPI_BYTE, MPI_STATUS_IGNORE),
-                  "read_at_all plain", comm);
-    }
     mpi_check(MPI_File_close(&fh), "close plain", comm);
 }
 // == READ (Cipher) ==
@@ -114,7 +122,6 @@ void parallel_write_cipher_chunk(const std::string &path,
                                  bool atomic_io,
                                  MPI_Comm comm)
 {
-    // Erstellen der Cipher-Datei
     MPI_File fh;
     mpi_check(MPI_File_open(comm, path.c_str(),
                             MPI_MODE_WRONLY | MPI_MODE_CREATE,
@@ -123,18 +130,15 @@ void parallel_write_cipher_chunk(const std::string &path,
     mpi_check(MPI_File_set_atomicity(fh, atomic_io ? 1 : 0),
               "set_atomicity cipher write", comm);
 
-    // Jeder Rank schreibt unabhängig seine lokalen Zeilen (ohne Halos) in die Datei, da er seine Position mittels des dist-Offsets kennt
     mpi_check(MPI_File_write_at(fh,
-                                static_cast<MPI_Offset>(dist.offset_rows) * dist.grid_size, // Offset/ Displacement der Bytes
+                                static_cast<MPI_Offset>(dist.offset_rows) * dist.grid_size,
                                 data.data(),
                                 static_cast<int>(data.size()),
                                 MPI_BYTE, MPI_STATUS_IGNORE),
               "write_at cipher", comm);
 
-    // Beendet Schreib Handle
     mpi_check(MPI_File_close(&fh), "close cipher write", comm);
 
-    // Nach dem Schreiben: Größe einmalig per Single-Proc-Handle setzen (kein globales Barrier nötig)
     int r0 = 0;
     MPI_Comm_rank(comm, &r0);
     if (r0 == 0)
@@ -153,10 +157,18 @@ void parallel_write_plain_trimmed(const std::string &path,
                                   const RowDist &dist,
                                   const std::vector<std::uint8_t> &data,
                                   std::uint64_t original_size,
+                                  std::uint64_t start_offset,
                                   bool atomic_io,
                                   MPI_Comm comm)
 {
-    // Erstellt die gemeinsame Ausgabedatei für alle Ranks
+    const std::uint64_t base = (std::uint64_t)dist.offset_rows * dist.grid_size;
+    const std::uint64_t len = (std::uint64_t)dist.local_rows * dist.grid_size;
+    const std::uint64_t end = base + len;
+
+    // Nur Bereich [start_offset, start_offset + original_size) in die Datei schreiben
+    const std::uint64_t L = std::max(base, start_offset);
+    const std::uint64_t R = std::min(end, start_offset + original_size);
+
     MPI_File fh;
     mpi_check(MPI_File_open(comm, path.c_str(),
                             MPI_MODE_WRONLY | MPI_MODE_CREATE,
@@ -164,29 +176,20 @@ void parallel_write_plain_trimmed(const std::string &path,
               "open plain write", comm);
     mpi_check(MPI_File_set_atomicity(fh, atomic_io ? 1 : 0), "set_atomicity plain write", comm);
 
-    // Byte Ofset des Ranks
-    const MPI_Offset base = byte_offset(dist);
-    const std::size_t have = data.size();
-
-    // Prüfen, ob der Inhalt des Ranks noch innerhalb der original_size liegt
-    std::size_t to_write = 0;
-    if (static_cast<std::uint64_t>(base) < original_size)
+    if (R > L)
     {
-        const auto remain = original_size - static_cast<std::uint64_t>(base);
-        to_write = static_cast<std::size_t>(std::min<std::uint64_t>(have, remain));
+        const std::uint64_t wr_bytes = R - L;
+        const std::size_t src_off = (std::size_t)(L - base);
+        const MPI_Offset file_off = (MPI_Offset)(L - start_offset);
+        mpi_check(MPI_File_write_at(fh, file_off,
+                                    data.data() + src_off,
+                                    (int)wr_bytes, MPI_BYTE, MPI_STATUS_IGNORE),
+                  "write_at plain(centered)", comm);
     }
 
-    // Jeder Rank schreibt seine lokalen Zeilen (ohne Halos) in die Datei
-    if (to_write > 0)
-    {
-        mpi_check(MPI_File_write_at(fh, base, data.data(),
-                                    static_cast<int>(to_write),
-                                    MPI_BYTE, MPI_STATUS_IGNORE),
-                  "write_at plain", comm);
-    }
     mpi_check(MPI_File_close(&fh), "close plain write", comm);
 
-    // Nach dem Schreiben: Größe einmalig per Single-Proc-Handle setzen (kein globales Barrier nötig)
+    // Dateigröße einmalig exakt setzen (kein Barrier nötig)
     int r0 = 0;
     MPI_Comm_rank(comm, &r0);
     if (r0 == 0)
@@ -195,7 +198,7 @@ void parallel_write_plain_trimmed(const std::string &path,
         mpi_check(MPI_File_open(MPI_COMM_SELF, path.c_str(),
                                 MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f2),
                   "open plain resize", MPI_COMM_SELF);
-        mpi_check(MPI_File_set_size(f2, static_cast<MPI_Offset>(original_size)),
+        mpi_check(MPI_File_set_size(f2, (MPI_Offset)original_size),
                   "set_size plain post", MPI_COMM_SELF);
         mpi_check(MPI_File_close(&f2), "close plain resize", MPI_COMM_SELF);
     }
@@ -233,24 +236,74 @@ void dump_frame_parallel(const std::string &path,
 
 bool read_meta_rank0(const std::string &meta_path,
                      std::uint64_t &original_size,
-                     std::uint32_t &grid_size_n)
+                     std::uint32_t &grid_size_n,
+                     std::uint64_t &start_offset)
 {
     std::ifstream in(meta_path, std::ios::binary);
     if (!in)
         return false;
-    in.read(reinterpret_cast<char *>(&original_size), sizeof(original_size));
-    in.read(reinterpret_cast<char *>(&grid_size_n), sizeof(grid_size_n));
-    return static_cast<bool>(in);
+
+    // Versuchen: magic + version. Wenn nicht vorhanden, alten zweifeldigen Header lesen.
+    std::uint32_t magic = 0, version = 0;
+    in.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+    in.read(reinterpret_cast<char *>(&version), sizeof(version));
+    if (!in)
+        return false;
+
+    if (magic == 0x48505031)
+    { // "HPP1"
+        // v1/v2
+        in.read(reinterpret_cast<char *>(&original_size), sizeof(original_size));
+        in.read(reinterpret_cast<char *>(&grid_size_n), sizeof(grid_size_n));
+        if (!in)
+            return false;
+        if (version >= 2)
+        {
+            in.read(reinterpret_cast<char *>(&start_offset), sizeof(start_offset));
+            if (!in)
+                return false;
+        }
+        else
+        {
+            start_offset = 0;
+        }
+        return true;
+    }
+    else
+    {
+        // Rückfälliger Pfad: alte Meta ohne magic/version (nur 2 Felder)
+        // Wir haben schon 8 Bytes (oder 4+4) verbraucht → zurückspulen:
+        in.clear();
+        in.seekg(0, std::ios::beg);
+        in.read(reinterpret_cast<char *>(&original_size), sizeof(original_size));
+        in.read(reinterpret_cast<char *>(&grid_size_n), sizeof(grid_size_n));
+        if (!in)
+            return false;
+        start_offset = 0;
+        return true;
+    }
 }
 
 bool write_meta_rank0(const std::string &meta_path,
                       std::uint64_t original_size,
-                      std::uint32_t grid_size_n)
+                      std::uint32_t grid_size_n,
+                      std::uint64_t start_offset)
 {
     std::ofstream out(meta_path, std::ios::binary | std::ios::trunc);
     if (!out)
         return false;
+
+    // Write magic + versioned header (v2 includes start_offset)
+    const std::uint32_t magic = 0x48505031; // "HPP1"
+    const std::uint32_t version = 2;        // v2: with start_offset
+    out.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
+    out.write(reinterpret_cast<const char *>(&version), sizeof(version));
+
+    // Common fields
     out.write(reinterpret_cast<const char *>(&original_size), sizeof(original_size));
     out.write(reinterpret_cast<const char *>(&grid_size_n), sizeof(grid_size_n));
+    // v2 field
+    out.write(reinterpret_cast<const char *>(&start_offset), sizeof(start_offset));
+
     return static_cast<bool>(out);
 }

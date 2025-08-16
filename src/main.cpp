@@ -37,6 +37,8 @@ int main(int argc, char **argv)
 
     auto cfg = get_config();
     cfg.mode = parse_mode_from_cli(argc, argv, cfg.mode);
+    cfg.grid_size = parse_grid_from_cli(argc, argv, cfg.grid_size == 0 ? 50 : cfg.grid_size);
+    cfg.iterations = parse_iters_from_cli(argc, argv, cfg.iterations);
     std::string err;
     if (!validate_config(cfg, err))
     {
@@ -83,6 +85,7 @@ int main(int argc, char **argv)
 
     uint64_t originalSize = 0;
     int grid_size = 0;
+    uint64_t start_offset = 0; // Möglichkeit die Nachricht im Grid anzuordnen bspw. Mittig
 
     // Findet einen zu 64 Bit passenden MPI-Integer-Typ (für Portierbarkeit der originalSize Variablen)
     MPI_Datatype MPI_UINT64_MATCHED;
@@ -96,6 +99,7 @@ int main(int argc, char **argv)
     // Bestimmen der grid_size und der originalSize
     if (rank == 0)
     {
+        uint64_t local_start_offset = 0;
         if (doEncrypt)
         {
             // Encrypt: Rank 0 liest die Eingabedatei und bestimmt die Größe
@@ -115,27 +119,49 @@ int main(int argc, char **argv)
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
             originalSize = static_cast<uint64_t>(fsz);
-            grid_size = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(originalSize))));
+            // Gridgröße: CLI-Override oder sqrt(originalSize)
+            if (cfg.grid_size > 0)
+            {
+                grid_size = cfg.grid_size;
+            }
+            else
+            {
+                grid_size = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(originalSize))));
+            }
+            const uint64_t cap = static_cast<uint64_t>(grid_size) * grid_size;
+            if (originalSize > cap)
+            {
+                std::cerr << "ERROR: message (" << originalSize << ") exceeds grid capacity (" << grid_size
+                          << "x" << grid_size << " = " << cap << ")\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            // Zentrierter Start-Offset im N*N-Grid
+            local_start_offset = (cap - originalSize) / 2;
             std::cout << "Encrypting mode selected.\n";
             std::cout << "Read size " << originalSize << " bytes from " << inPlain.c_str()
-                      << ", grid size = " << grid_size << std::endl;
+                      << ", grid size = " << grid_size << ", start_offset = " << local_start_offset << std::endl;
         }
         else
         {
             // Decrypt: Rank 0 liest die Meta-Datei und bestimmt die Größe
             uint32_t Nmeta = 0;
-            if (!read_meta_rank0(metaPath, originalSize, Nmeta))
+            uint64_t meta_start = 0; // Start-Offset (Wo in der Decrypted-Message liegt am ende die tatsächliche Nachricht) in der Meta-Datei
+            if (!read_meta_rank0(metaPath, originalSize, Nmeta, meta_start))
             {
                 std::cerr << "ERROR: could not read meta file '" << metaPath << "'\n";
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
             grid_size = static_cast<int>(Nmeta);
+            local_start_offset = meta_start; // Start-Offset aus der Meta -Datei laden
         }
+        start_offset = local_start_offset;
     }
 
     // Alle Ranks erhalten die Metadaten originalSize und grid_size
     MPI_Bcast(&originalSize, 1, MPI_UINT64_MATCHED, 0, MPI_COMM_WORLD);
     MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    // Broadcast start_offset zu allen Ranks
+    MPI_Bcast(&start_offset, 1, MPI_UINT64_MATCHED, 0, MPI_COMM_WORLD);
 
     // Vorsichtsmaßnahme für zu kleine grid_size (noch kein Fallback implementiert!!!)
     if (nprocs > grid_size)
@@ -163,7 +189,7 @@ int main(int argc, char **argv)
 
     if (doEncrypt)
     {
-        parallel_read_plain_chunk(inPlain, dist, originalSize, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
+        parallel_read_plain_chunk(inPlain, dist, originalSize, start_offset, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
     }
     else
     {
@@ -430,12 +456,12 @@ int main(int argc, char **argv)
         parallel_write_cipher_chunk(encBin, dist, result_core, paddedBytes, /*atomic?*/ false, MPI_COMM_WORLD);
         if (rank == 0)
         {
-            write_meta_rank0(metaPath, originalSize, static_cast<uint32_t>(grid_size));
+            write_meta_rank0(metaPath, originalSize, static_cast<uint32_t>(grid_size), start_offset);
         }
     }
     else
     {
-        parallel_write_plain_trimmed(outPlain, dist, result_core, originalSize, /*atomic?*/ false, MPI_COMM_WORLD);
+        parallel_write_plain_trimmed(outPlain, dist, result_core, originalSize, start_offset, /*atomic?*/ false, MPI_COMM_WORLD);
     }
 
     // Zeiterfassung und Ausgabe

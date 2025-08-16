@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
-#include <random> 
+#include <random>
 
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask = std::vector<std::vector<uint8_t>>;
@@ -30,13 +30,11 @@ Mask generateRandomWallMask(int grid_size, double wall_ratio = 0.1, uint32_t see
 void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename);
 Mask loadWallMaskBinary(int grid_size, const std::string &filename);
 
-
 // MPI-Kommunikation
 void broadcastMask(Mask &mask, MPI_Comm comm);
 void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst);
 
 // Gekapselte Hauptlogik der HPP-Operationen
-void saveBinary(const std::vector<uint8_t>& data, const char* filename);
-void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, const char* metaFilename);
-bool loadEncryptedMeta(uint64_t& originalSize, uint32_t& gridSize, const char* metaFilename);
-
+void saveBinary(const std::vector<uint8_t> &data, const char *filename);
+void saveEncryptedMeta(uint64_t originalSize, uint32_t gridSize, uint64_t &startOffset, const char *metaFilename);
+bool loadEncryptedMeta(uint64_t &originalSize, uint32_t &gridSize, uint64_t &startOffset, const char *metaFilename);
