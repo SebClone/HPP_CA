@@ -87,6 +87,8 @@
         "numbers": "cpp",
         "ostream": "cpp",
         "cinttypes": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "charconv": "cpp",
+        "forward_list": "cpp"
     }
 }
