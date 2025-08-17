@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # -------------------- Parameter-Sweeps --------------------
-NP_LIST=(1 2 4)             # MPI ranks
-OMP_LIST=(1 2 4)            # OpenMP threads
-GRID_LIST=(64 96)         # Grid sizes N (used for encrypt)
-ITERS_LIST=(500 1000)     # Iterations
+NP_LIST=(1 2 4 6 8 10 12)             # MPI ranks
+OMP_LIST=(1 2 4 6 8 10 12)            # OpenMP threads
+GRID_LIST=(64 128 256 512 1024)         # Grid sizes N
+ITERS_LIST=(500 1000 2000)     # Iterations
 REPEATS=1                 # number of repetitions per configuration
 
 # -------------------- Build once ---------------------------
