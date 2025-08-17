@@ -57,6 +57,7 @@ int main(int argc, char **argv)
     const std::uint64_t seed = cfg.seed;                   // seed für Wandzellen-Generierung (0 = zufälliger seed)
 
     // Configs: Eingabe- und Ausgabe
+    // Bild oder Text verarbeitung muss in config.cpp festgelegt werden
     const std::string &inPlain = cfg.input;
     const std::string &encBin = cfg.enc_bin;
     const std::string &metaPath = cfg.meta;

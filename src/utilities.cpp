@@ -48,6 +48,23 @@ std::vector<uint8_t> readFileBytes(const std::string &filename)
     return data;
 }
 
+// Lädt ein Bild belibiges .png/ .jpg Bild als RGB-Daten
+std::vector<uint8_t> loadImageAsRGB(const std::string &filename, int &width, int &height, int &channels)
+{
+    unsigned char *data = stbi_load(filename.c_str(), &width, &height, &channels, 3);
+    if (!data)
+    {
+        std::cerr << "Fehler: Bild konnte nicht geladen werden: " << filename << std::endl;
+        return {};
+    }
+
+    size_t size = width * height * 3; // 3 Bytes pro Pixel (R, G, B)
+    std::vector<uint8_t> imgData(data, data + size);
+
+    stbi_image_free(data); // Speicher freigeben
+    return imgData;
+}
+
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, size_t &grid_size)
 {
     size_t originalSize = data.size();

@@ -17,11 +17,11 @@ struct AppConfig
     int grid_size = 0; // 0 => automatisch aus Inputgröße
     int frame_interval = 10;
 
-    std::string input = "data/message.txt";
+    std::string input;
     std::string enc_bin = "data/encrypted_full.bin";
     std::string meta = "data/encrypted_full.meta";
     std::string key = "data/wall_mask.key";
-    std::string output = "data/decrypted_message.txt";
+    std::string output;
 
     bool dump_frames = false;   // true = Frames speichern
     double wall_density = 0.10; // nur im Encrypt-Fall relevant
@@ -36,11 +36,13 @@ namespace appcfg
     inline constexpr int grid_size = 0;
     inline constexpr int frame_interval = 10;
 
-    inline constexpr const char *input = "data/message.txt";
+    inline constexpr const char *input_text = "data/message.txt";
+    inline constexpr const char *input_img = "data/image_message.png";
     inline constexpr const char *enc_bin = "data/encrypted_full.bin";
     inline constexpr const char *meta = "data/encrypted_full.meta";
     inline constexpr const char *key = "data/wall_mask.key";
-    inline constexpr const char *output = "data/decrypted_message.txt";
+    inline constexpr const char *output_text = "data/decrypted_message.txt";
+    inline constexpr const char *output_img = "data/decrypted_image.png";
 
     inline constexpr bool dump_frames = false;
     inline constexpr double wall_density = 0.10;

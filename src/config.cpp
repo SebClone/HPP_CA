@@ -10,11 +10,18 @@ AppConfig get_config()
     c.grid_size = appcfg::grid_size;
     c.frame_interval = appcfg::frame_interval;
 
-    c.input = appcfg::input;
+    // Festlegen, ob Bild oder Text verarbeitet wird
+    // // Text
+    // c.input = appcfg::input_text;
+    // c.output = appcfg::output_text;
+
+    // Bild
+    c.input = appcfg::input_img;
+    c.output = appcfg::output_img;
+
     c.enc_bin = appcfg::enc_bin;
     c.meta = appcfg::meta;
     c.key = appcfg::key;
-    c.output = appcfg::output;
 
     c.dump_frames = appcfg::dump_frames;
     c.wall_density = appcfg::wall_density;

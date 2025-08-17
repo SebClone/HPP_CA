@@ -17,6 +17,8 @@ void save_frame_bin(const std::vector<uint8_t> &frame, int iter);
 
 // Binäres Einlesen
 std::vector<uint8_t> readFileBytes(const std::string &filename);
+// Lädt ein Bild belibiges .png/ .jpg Bild als RGB-Daten
+std::vector<uint8_t> loadImageAsRGB(const std::string &filename, int &width, int &height, int &channels);
 
 // Grid-Transformationen
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, size_t &grid_size);
