@@ -35,6 +35,12 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
+    // --- Timing-Variablen (minimal & wichtig) ---
+    double t_io_read  = 0.0;
+    double t_mask     = 0.0;
+    double t_loop     = 0.0;
+    double t_io_write = 0.0;
+
     auto cfg = get_config();
     cfg.mode = parse_mode_from_cli(argc, argv, cfg.mode);
     cfg.grid_size = parse_grid_from_cli(argc, argv, cfg.grid_size == 0 ? 50 : cfg.grid_size);
@@ -188,6 +194,8 @@ int main(int argc, char **argv)
     // lokaler Speicher für den lokalen Block im Arbeitsspeicher des MPI-Ranks (ohne Halos)
     std::vector<uint8_t> local_core(local_rows * grid_size);
 
+    // --- Timing: I/O READ ---
+    double t_io_r0 = MPI_Wtime();
     if (doEncrypt)
     {
         parallel_read_plain_chunk(inPlain, dist, originalSize, start_offset, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
@@ -196,8 +204,11 @@ int main(int argc, char **argv)
     {
         parallel_read_cipher_chunk(encBin, dist, paddedBytes, local_core, /*atomic?*/ false, MPI_COMM_WORLD);
     }
+    t_io_read += (MPI_Wtime() - t_io_r0);
 
     // Rank 0 erzeugt die Wall-Mask oder lädt sie aus der Datei
+    // --- Timing: Wall-Mask gen/load + Broadcast (kompakt über gesamten Abschnitt) ---
+    double t_mask0 = MPI_Wtime();
     MPI_Barrier(MPI_COMM_WORLD);
     Mask wall_mask;
     if (rank == 0)
@@ -246,6 +257,7 @@ int main(int argc, char **argv)
         }
     }
     // --- Ende: robuster Broadcast ---
+    t_mask += (MPI_Wtime() - t_mask0);
 
     // Flache doppel-Buffer für das Grid (mit Platz für Halo-Zellen)
     std::vector<uint8_t> gridBufA(static_cast<std::size_t>(local_rows + 2) * grid_size);
@@ -290,9 +302,18 @@ int main(int argc, char **argv)
     // 5. Frames speichern (optional)
     /*------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
+    if (rank == 0) {
+        std::cout << "\n[Timing pro Iteration] (MAX über Ranks, Sekunden):\n";
+        std::cout << "iter  comm      inner     border    swap      total\n";
+    }
+
     for (int iter = 0; iter < numIterations; ++iter)
     {
+        double it0 = MPI_Wtime();
+        double t_comm = 0.0, t_inner = 0.0, t_border = 0.0, t_swap = 0.0;
+
         // 1) Halo-Transfers des aktuellen Puffers starten (nicht-persistenter Speicher)
+        double t_post0 = MPI_Wtime();
         MPI_Request reqs[4]; // 2x Irecv, 2x Isend
         const bool useA = (active_ptr == gridBufA.data());
         const int TAG_UP = useA ? TAG_FROM_UP_A : TAG_FROM_UP_B;
@@ -304,15 +325,17 @@ int main(int argc, char **argv)
         // Post sends aus den Randzeilen von active_ptr
         MPI_Isend(active_ptr + idx(1, 0), grid_size, MPI_BYTE, up, TAG_DOWN, cart_comm, &reqs[2]);
         MPI_Isend(active_ptr + idx(local_rows, 0), grid_size, MPI_BYTE, down, TAG_UP, cart_comm, &reqs[3]);
+        t_comm += (MPI_Wtime() - t_post0);
 
         // 2) Innenbereich berechnen (Zeilen 2..local_rows-1), braucht keine Halos
+        double t_in0 = MPI_Wtime();
         if (local_rows >= 3)
         {
             const int N = grid_size;
 
             if (doEncrypt)
             {
-#pragma omp parallel for schedule(static)
+            #pragma omp parallel for schedule(static)
                 for (int i = 2; i <= local_rows - 1; ++i)
                 {
                     const int gr = (offset_rows + (i - 1)) % N; // globale Zeile
@@ -325,7 +348,7 @@ int main(int argc, char **argv)
 
                     uint8_t *__restrict tgt_row = target_ptr + idx(i, 0);
 
-#pragma omp simd
+                    #pragma omp simd
                     for (int j = 0; j < N; ++j)
                     {
                         tgt_row[j] = applyRules_fast<true>(
@@ -335,7 +358,7 @@ int main(int argc, char **argv)
             }
             else
             {
-#pragma omp parallel for schedule(static)
+                #pragma omp parallel for schedule(static)
                 for (int i = 2; i <= local_rows - 1; ++i)
                 {
                     const int gr = (offset_rows + (i - 1)) % N;
@@ -348,7 +371,7 @@ int main(int argc, char **argv)
 
                     uint8_t *__restrict tgt_row = target_ptr + idx(i, 0);
 
-#pragma omp simd
+                #pragma omp simd
                     for (int j = 0; j < N; ++j)
                     {
                         tgt_row[j] = applyRules_fast<false>(
@@ -357,10 +380,14 @@ int main(int argc, char **argv)
                 }
             }
         }
+        t_inner += (MPI_Wtime() - t_in0);
 
         // 3) Auf Halo-Transfers warten, dann Randzeilen (1 und local_rows)
+        double t_wait0 = MPI_Wtime();
         MPI_Waitall(4, reqs, MPI_STATUSES_IGNORE);
+        t_comm += (MPI_Wtime() - t_wait0);
 
+        double t_border0 = MPI_Wtime();
         if (local_rows >= 1)
         {
             const int N = grid_size;
@@ -376,13 +403,13 @@ int main(int argc, char **argv)
 
             if (doEncrypt)
             {
-#pragma omp simd
+            #pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgt1[j] = applyRules_fast<true>(active_ptr, N, 1, j, wrow, wrow_u, wrow_d);
             }
             else
             {
-#pragma omp simd
+            #pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgt1[j] = applyRules_fast<false>(active_ptr, N, 1, j, wrow, wrow_u, wrow_d);
             }
@@ -404,20 +431,41 @@ int main(int argc, char **argv)
 
             if (doEncrypt)
             {
-#pragma omp simd
+            #pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgtL[j] = applyRules_fast<true>(active_ptr, N, iL, j, wrow, wrow_u, wrow_d);
             }
             else
             {
-#pragma omp simd
+            #pragma omp simd
                 for (int j = 0; j < N; ++j)
                     tgtL[j] = applyRules_fast<false>(active_ptr, N, iL, j, wrow, wrow_u, wrow_d);
             }
         }
+        t_border += (MPI_Wtime() - t_border0);
 
         // 4) Puffer tauschen
+        double t_swap0 = MPI_Wtime();
         std::swap(active_ptr, target_ptr);
+        t_swap += (MPI_Wtime() - t_swap0);
+
+        double t_iter = MPI_Wtime() - it0;
+        t_loop += t_iter;
+
+        // Kompakte Ausgabe: MAX über Ranks, nur Rank 0 druckt
+        double local_it[5]  = { t_comm, t_inner, t_border, t_swap, t_iter };
+        double global_it[5] = { 0,0,0,0,0 };
+        MPI_Reduce(local_it, global_it, 5, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            std::cout << std::fixed << std::setprecision(6)
+                      << std::setw(4) << iter << "  "
+                      << std::setw(8) << global_it[0] << "  "
+                      << std::setw(8) << global_it[1] << "  "
+                      << std::setw(8) << global_it[2] << "  "
+                      << std::setw(8) << global_it[3] << "  "
+                      << std::setw(8) << global_it[4] << "\n";
+        }
     }
     /*
     // Frames speichern
@@ -452,6 +500,8 @@ int main(int argc, char **argv)
     }
 
     // Ergebnis in Ausgabedatei schreiben (.bin für Encrypt, .txt für Decrypt)
+    // --- Timing: I/O WRITE ---
+    double t_io_w0 = MPI_Wtime();
     if (doEncrypt)
     {
         parallel_write_cipher_chunk(encBin, dist, result_core, paddedBytes, /*atomic?*/ false, MPI_COMM_WORLD);
@@ -463,6 +513,24 @@ int main(int argc, char **argv)
     else
     {
         parallel_write_plain_trimmed(outPlain, dist, result_core, originalSize, start_offset, /*atomic?*/ false, MPI_COMM_WORLD);
+    }
+    t_io_write += (MPI_Wtime() - t_io_w0);
+
+    // Kleine Timing-Summary (MAX über Ranks), zusätzlich zur bestehenden Total-Ausgabe
+    {
+        double local_sum[4]  = { t_io_read, t_mask, t_loop, t_io_write };
+        double global_sum[4] = { 0,0,0,0 };
+        MPI_Reduce(local_sum, global_sum, 4, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        if (rank == 0)
+        {
+            std::cout << std::fixed << std::setprecision(6);
+            std::cout << "\n[Timing Summary] (MAX über Ranks):\n";
+            std::cout << "I/O read        : " << global_sum[0] << " s\n";
+            std::cout << "Mask+Broadcast  : " << global_sum[1] << " s\n";
+            std::cout << "Main loop total : " << global_sum[2] << " s"
+                      << "  (avg/iter ~ " << (global_sum[2] / std::max(1, numIterations)) << " s)\n";
+            std::cout << "I/O write       : " << global_sum[3] << " s\n";
+        }
     }
 
     // Zeiterfassung und Ausgabe
