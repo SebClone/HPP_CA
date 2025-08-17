@@ -1,5 +1,8 @@
 #include "utilities.hpp"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <bitset>
 #include <iostream>
 #include <fstream>

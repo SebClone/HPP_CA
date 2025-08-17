@@ -11,13 +11,13 @@ AppConfig get_config()
     c.frame_interval = appcfg::frame_interval;
 
     // Festlegen, ob Bild oder Text verarbeitet wird
-    // // Text
-    // c.input = appcfg::input_text;
-    // c.output = appcfg::output_text;
+    // Text
+    c.input = appcfg::input_text;
+    c.output = appcfg::output_text;
 
-    // Bild
-    c.input = appcfg::input_img;
-    c.output = appcfg::output_img;
+    // // Bild
+    // c.input = appcfg::input_img;
+    // c.output = appcfg::output_img;
 
     c.enc_bin = appcfg::enc_bin;
     c.meta = appcfg::meta;
