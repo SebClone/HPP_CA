@@ -192,35 +192,45 @@ uint8_t applyRules(
 template<bool ENCRYPT>
 inline uint8_t applyRules_fast(
     const uint8_t* FAST_RESTRICT G,
-    int N,
-    int i, int j,
-    const uint8_t* FAST_RESTRICT wrow,
-    const uint8_t* FAST_RESTRICT wrow_up,
-    const uint8_t* FAST_RESTRICT wrow_dn
+    int rowStride,                 // <<< NEU: lokale Zeilenbreite inkl. Halos (W = local_cols+2)
+    int i, int j,                  // lokale Indizes inkl. Halos (i in [1..local_rows], j in [1..local_cols])
+    const uint8_t* FAST_RESTRICT wrow,     // Zeiger auf BEGINN der globalen Maskenzeile (Spalte 0)
+    const uint8_t* FAST_RESTRICT wrow_up,  // dto. für Zeile -1 (mod Nmask)
+    const uint8_t* FAST_RESTRICT wrow_dn,  // dto. für Zeile +1 (mod Nmask)
+    int Nmask,                     // <<< NEU: globale Breite der Maske (= grid_size)
+    int j0_global                  // <<< NEU: globale Spalte, die lokal bei j==1 liegt (= offset_cols)
 )
 {
-    // Toroidales j-Indexing (ohne % für j±1)
-    const int jl = (j == 0   ? N - 1 : j - 1);
-    const int jr = (j == N-1 ? 0     : j + 1);
+    // Lokales j-Indexing (mit Halos) für den Datenpuffer
+    const int S  = rowStride;                       // S = local_cols + 2
+    const int jl = (j == 0   ? S - 1 : j - 1);      // (wird bei j=1 -> 0 = linker Halo)
+    const int jr = (j == S-1 ? 0     : j + 1);      // (wird bei j=local_cols -> local_cols+1 = rechter Halo)
 
-    // Zeilenoffsets im flachen Speicher
-    const std::size_t row    = static_cast<std::size_t>(i)     * static_cast<std::size_t>(N);
-    const std::size_t row_up = static_cast<std::size_t>(i - 1) * static_cast<std::size_t>(N);
-    const std::size_t row_dn = static_cast<std::size_t>(i + 1) * static_cast<std::size_t>(N);
+    // Zeilenoffsets im flachen lokalen Speicher
+    const std::size_t row    = static_cast<std::size_t>(i)     * static_cast<std::size_t>(S);
+    const std::size_t row_up = static_cast<std::size_t>(i - 1) * static_cast<std::size_t>(S);
+    const std::size_t row_dn = static_cast<std::size_t>(i + 1) * static_cast<std::size_t>(S);
 
-    // Zellen lesen
+    // Zellen aus dem lokalen Puffer lesen
     const uint8_t c  = G[row    + j];
     const uint8_t up = G[row_up + j];
     const uint8_t dn = G[row_dn + j];
     const uint8_t lf = G[row    + jl];
     const uint8_t rt = G[row    + jr];
 
-    // Wand-Flags (Zeiger auf fertige Wall-Zeilen kommen von außen)
-    const bool w_c  = (wrow   [j ] != 0);
-    const bool w_up = (wrow_up[j ] != 0);
-    const bool w_dn = (wrow_dn[j ] != 0);
-    const bool w_lf = (wrow   [jl] != 0);
-    const bool w_rt = (wrow   [jr] != 0);
+    // --- Globale Spaltenindizes für die Wandmaske ---
+    // Lokales j (1..local_cols) entspricht global: jg = j0_global + (j-1)
+    // Halos j=0 / j=local_cols+1 -> jg-1 / jg+1 (mit Wrap über Nmask)
+    const int jg   = (j0_global + (j - 1) + Nmask) % Nmask;
+    const int jlg  = (jg - 1 + Nmask) % Nmask;
+    const int jrg  = (jg + 1) % Nmask;
+
+    // Wand-Flags (wrow* zeigen auf den BEGINN der jeweiligen globalen Zeile, daher direkte Indizierung mit jg/jlg/jrg)
+    const bool w_c  = (wrow   [jg ] != 0);
+    const bool w_up = (wrow_up[jg ] != 0);
+    const bool w_dn = (wrow_dn[jg ] != 0);
+    const bool w_lf = (wrow   [jlg] != 0);
+    const bool w_rt = (wrow   [jrg] != 0);
 
     if constexpr (ENCRYPT) {
         // ---------- vorwärts: collision -> propagate -> reflection ----------
@@ -255,13 +265,14 @@ inline uint8_t applyRules_fast(
     }
 }
 
-// Explizite Instanziierungen: erzeugen genau zwei Versionen (Encrypt & Decrypt)
-// Dadurch brauchen andere Übersetzungseinheiten nur den Header – sie instanziieren NICHT erneut.
+// Explizite Instanziierungen: genau zwei Versionen (Encrypt & Decrypt)
 template uint8_t applyRules_fast<true>(
     const uint8_t* FAST_RESTRICT, int, int, int,
-    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
+    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT,
+    int, int
 );
 template uint8_t applyRules_fast<false>(
     const uint8_t* FAST_RESTRICT, int, int, int,
-    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
+    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT,
+    int, int
 );

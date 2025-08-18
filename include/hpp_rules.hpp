@@ -34,23 +34,14 @@ uint8_t applyRules(
   #endif
 #endif
 
-
 template<bool ENCRYPT>
-uint8_t applyRules_fast(
+inline uint8_t applyRules_fast(
     const uint8_t* FAST_RESTRICT G,
-    int N,
-    int i, int j,
-    const uint8_t* FAST_RESTRICT wrow,
-    const uint8_t* FAST_RESTRICT wrow_up,
-    const uint8_t* FAST_RESTRICT wrow_dn
+    int rowStride,                 // lokale Zeilenbreite inkl. Halos (W = local_cols+2)
+    int i, int j,                  // lokale Indizes inkl. Halos (i ∈ [1..local_rows], j ∈ [1..local_cols])
+    const uint8_t* FAST_RESTRICT wrow,     // BEGINN der globalen Maskenzeile
+    const uint8_t* FAST_RESTRICT wrow_up,  // BEGINN der globalen Maskenzeile oben
+    const uint8_t* FAST_RESTRICT wrow_dn,  // BEGINN der globalen Maskenzeile unten
+    int Nmask,                     // globale Maskenbreite (= grid_size)
+    int j0_global                  // globale Spalte, die lokal bei j==1 liegt (= offset_cols)
 );
-
-extern template uint8_t applyRules_fast<true>(
-    const uint8_t* FAST_RESTRICT, int, int, int,
-    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
-);
-extern template uint8_t applyRules_fast<false>(
-    const uint8_t* FAST_RESTRICT, int, int, int,
-    const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT, const uint8_t* FAST_RESTRICT
-);
-
