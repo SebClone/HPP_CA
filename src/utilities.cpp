@@ -278,6 +278,6 @@ bool loadEncryptedMeta(uint64_t &originalSize,
     }
     else
     {
-        startOffset = 0; // Abwärtskompatibilität: Version 1 kennt das Feld nicht
+        startOffset = 0;
     }
 }
