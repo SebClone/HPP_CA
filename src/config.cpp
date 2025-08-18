@@ -36,6 +36,14 @@ AppConfig get_config()
     return c;
 }
 
+/**
+ * @brief Validates the application configuration.
+ *
+ * Checks if the configuration parameters are within valid ranges.
+ * @param cfg The application configuration to validate.
+ * @param error_msg Output parameter to store error messages if validation fails.
+ * @return true if the configuration is valid, false otherwise.
+ */
 bool validate_config(const AppConfig &cfg, std::string &error_msg)
 {
     if (cfg.iterations <= 0)
@@ -62,6 +70,17 @@ bool validate_config(const AppConfig &cfg, std::string &error_msg)
     return true;
 }
 
+/**
+ * @brief Parses the application mode from command line arguments.
+ *
+ * Checks for the presence of specific flags to determine the mode (Encrypt or Decrypt).
+ * For example, "--mode encrypt" or "--encrypt" for encryption mode, and "--mode decrypt" or "--decrypt" for decryption mode.
+ * If no flags are provided, it returns the default mode.
+ * @param argc The number of command line arguments.
+ * @param argv The array of command line arguments.
+ * @param deflt The default mode if no flags are provided.
+ * @return The parsed application mode.
+ */
 AppMode parse_mode_from_cli(int argc, char **argv, AppMode deflt)
 {
     for (int i = 1; i < argc; ++i)
@@ -90,6 +109,16 @@ AppMode parse_mode_from_cli(int argc, char **argv, AppMode deflt)
     return deflt;
 }
 
+/**
+ * @brief Parses the grid size from command line arguments.
+ *
+ * Checks for the presence of the "--grid" or "-g" flag to set the grid size.
+ * If the flag is not present, it returns the fallback value.
+ * @param argc The number of command line arguments.
+ * @param argv The array of command line arguments.
+ * @param fallback The fallback value for grid size if no flag is provided.
+ * @return The parsed grid size.
+ */
 int parse_grid_from_cli(int argc, char **argv, int fallback)
 {
     int N = fallback;
@@ -104,13 +133,23 @@ int parse_grid_from_cli(int argc, char **argv, int fallback)
             }
             catch (...)
             {
-                // ignore, keep fallback
+                // ignore
             }
         }
     }
     return N;
 }
 
+/**
+ * @brief Parses the number of iterations from command line arguments.
+ *
+ * Checks for the presence of the "--iters" or "-I" flag to set the number of iterations.
+ * If the flag is not present, it returns the fallback value.
+ * @param argc The number of command line arguments.
+ * @param argv The array of command line arguments.
+ * @param fallback The fallback value for iterations if no flag is provided.
+ * @return The parsed number of iterations.
+ */
 int parse_iters_from_cli(int argc, char **argv, int fallback)
 {
     int iters = fallback;

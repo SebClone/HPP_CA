@@ -10,12 +10,24 @@
 #include <iomanip>
 #include <cmath>
 
+/**
+ * @brief Prints bits of a lattice cell as a binary string.
+ *
+ * This function is designed to print the bits of a lattice cell as a bit string.
+ * @param value The lettice cell to print.
+ */
 void printBits(uint8_t value)
 {
     std::bitset<8> bits(value);
     std::cout << bits;
 }
 
+/**
+ * @brief Prints the entire CA-lattice as a grid of bits.
+ *
+ * This function itterates over each cell in the grid and prints its bits.
+ * @param grid The CA-lattice to print.
+ */
 void printGrid(const std::vector<std::vector<uint8_t>> &grid)
 {
     for (const auto &row : grid)
@@ -29,6 +41,13 @@ void printGrid(const std::vector<std::vector<uint8_t>> &grid)
     }
 }
 
+/**
+ * @brief Loads an file into a vector of bytes.
+ *
+ * Checks if the file can be opened and reads its content into a vector of bytes.
+ * @param filename The name/ path of the file to read.
+ * @return A vector of bytes containing the file data.
+ */
 std::vector<uint8_t> readFileBytes(const std::string &filename)
 {
     std::ifstream file(filename, std::ios::binary);
@@ -52,6 +71,16 @@ std::vector<uint8_t> readFileBytes(const std::string &filename)
 }
 
 // Lädt ein Bild belibiges .png/ .jpg Bild als RGB-Daten
+/**
+ * @brief Loads an image file (.png) as RGB data.
+ *
+ * Checks if the file can be opened and uses the stb_image library to load an image file and returns its RGB data.
+ * @param filename The name/ path of the image file to read.
+ * @param width Reference to store the width of the image.
+ * @param height Reference to store the height of the image.
+ * @param channels Reference to store the number of channels in the image.
+ * @return vector of bytes containing the RGB data of the image.
+ */
 std::vector<uint8_t> loadImageAsRGB(const std::string &filename, int &width, int &height, int &channels)
 {
     unsigned char *data = stbi_load(filename.c_str(), &width, &height, &channels, 3);
@@ -61,13 +90,22 @@ std::vector<uint8_t> loadImageAsRGB(const std::string &filename, int &width, int
         return {};
     }
 
-    size_t size = width * height * 3; // 3 Bytes pro Pixel (R, G, B)
+    size_t size = width * height * 3; // 3 Bytes per pixel (R, G, B)
     std::vector<uint8_t> imgData(data, data + size);
 
-    stbi_image_free(data); // Speicher freigeben
+    stbi_image_free(data); // clear memory
     return imgData;
 }
 
+/**
+ * @brief Reshapes a flat vector of bytes into a 2D matrix.
+ *
+ * Writes the data (vector of bytes) into a 2D matrix by creating a square matrix (grid_size x grid_size).
+ * If the data size is not a perfect square, it pads the matrix with zeros.
+ * @param data The flat vector of bytes to reshape.
+ * @param grid_size Reference to store the size of the grid (number of rows/ columns).
+ * @return matrix of bytes representing the reshaped data.
+ */
 std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &data, size_t &grid_size)
 {
     size_t originalSize = data.size();
@@ -87,6 +125,13 @@ std::vector<std::vector<uint8_t>> reshapeToMatrix(const std::vector<uint8_t> &da
     return matrix;
 }
 
+/**
+ * @brief Flattens a 2D matrix into a 1D vector of bytes.
+ *
+ * Itterates over each row of the matrix and appends its elements to a flat vector.
+ * @param matrix The 2D matrix to flatten.
+ * @return vector of bytes containing the flattened data.
+ */
 std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matrix)
 {
     std::vector<uint8_t> flat;
@@ -100,6 +145,13 @@ std::vector<uint8_t> flattenMatrix(const std::vector<std::vector<uint8_t>> &matr
     return flat;
 }
 
+/**
+ * @brief Saves a vector of bytes as an ASCII text file.
+ *
+ * Checks if it can open the file and writes each byte as a character to the file.
+ * @param data The vector of bytes to save.
+ * @param filename The name/ path of the file TO write in.
+ */
 void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filename)
 {
     std::ofstream file(filename);
@@ -117,6 +169,14 @@ void saveAsAsciiText(const std::vector<uint8_t> &data, const std::string &filena
     file.close();
 }
 
+/**
+ * @brief Saves the current frame of the lattice as a binary file.
+ *
+ * Writes the lattice at the current iteration to a binary file.
+ * The file is named "frame_000000.bin", "frame_000001.bin", etc., depending on the iteration number.
+ * @param frame The current frame of the lattice to save.
+ * @param iter The current iteration number, used to name the file.
+ */
 void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
 {
     std::ostringstream oss;
@@ -139,6 +199,16 @@ void save_frame_bin(const std::vector<uint8_t> &frame, int iter)
     }
 }
 
+/**
+ * @brief Generates the wall mask for the lattice randomly.
+ *
+ * Creates a mask of walls in an seperate lattice of the same size as the data-lattice. Sets walls randomly based on the given wall density.
+ * The values are boolean, where 1 indicates a wall and 0 indicates no wall.
+ * @param grid_size The size of the grid (number of rows/ columns).
+ * @param wall_ratio The ratio of walls to total cells in the grid (0.0 to 1.0).
+ * @param seed The seed for the random number generator.
+ * @return wall_mask A 2D vector representing the wall mask, where 1 indicates a wall and 0 indicates no wall.
+ */
 Mask generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
 {
     if (seed == 0)
@@ -167,6 +237,13 @@ Mask generateRandomWallMask(int grid_size, double wall_ratio, uint32_t seed)
     return wall_mask;
 }
 
+/**
+ * @brief Saves the wall mask to a binary file.
+ *
+ * Takes the wall mask (2D vector) and writes it to a binary file specified by 'filename'..
+ * @param wall_mask The wall mask to save.
+ * @param filename The name/ path of the file to save the wall mask to.
+ */
 void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename)
 {
     std::ofstream file(filename, std::ios::binary);
@@ -185,6 +262,15 @@ void saveWallMaskBinary(const Mask &wall_mask, const std::string &filename)
     }
 }
 
+/**
+ * @brief Loads the wall mask from a binary file.
+ *
+ * Takes a binary file, specified by 'filename', and reads the wall mask from it.
+ * The file should contain the wall mask as a 2D vector of bytes.
+ * @param grid_size The size of the grid (number of rows/ columns).
+ * @param filename The name/ path of the file to read the wall mask from.
+ * @return wall_mask A 2D vector representing the wall mask, where 1 indicates a wall and 0 indicates no wall.
+ */
 Mask loadWallMaskBinary(int grid_size, const std::string &filename)
 {
     Mask wall_mask(grid_size, std::vector<uint8_t>(grid_size, 0));
@@ -208,6 +294,14 @@ Mask loadWallMaskBinary(int grid_size, const std::string &filename)
     return wall_mask;
 }
 
+/**
+ * @brief Broadcasts the wall mask to all processes in the MPI communicator.
+ *
+ * Sends the wall mask from the root process (rank=0) to all other processes.
+ * It uses MPI_Bcast to ensure that all processes have the same wall mask.
+ * @param mask The wall mask to broadcast.
+ * @param comm The MPI communicator.
+ */
 void broadcastMask(Mask &mask, MPI_Comm comm)
 {
     int rows = mask.size();
@@ -227,6 +321,14 @@ void broadcastMask(Mask &mask, MPI_Comm comm)
     }
 }
 
+/**
+ * @brief Copies a specified number of bytes from source to destination.
+ *
+ * This function copies 'count' bytes from 'src' to 'dst'.
+ * @param src Pointer to the source data.
+ * @param count Number of bytes to copy.
+ * @param dst Pointer to the destination where data will be copied.
+ */
 void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
 {
     for (std::size_t i = 0; i < count; ++i)
@@ -235,12 +337,29 @@ void copy_n_bytes(const uint8_t *src, std::size_t count, uint8_t *dst)
     }
 }
 
+/**
+ * @brief Saves a vector of bytes to a binary file.
+ *
+ * Writes the contents of the vector to a binary file specified by 'filename'.
+ * @param data The vector of bytes to save.
+ * @param filename The name/ path of the file to write in.
+ */
 void saveBinary(const std::vector<uint8_t> &data, const char *filename)
 {
     std::ofstream out(filename, std::ios::binary);
     out.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size()));
 }
 
+/**
+ * @brief Saves metadata about the encrypted data to a binary file.
+ *
+ * Saves the original size, grid size, and start offset of the encrypted data to a binary file.
+ * Recomended to hash the file with a diffrent method then wall_mask to increse security when sending the encrypted message to a third party.
+ * @param originalSize The original size of the data before encryption.
+ * @param gridSize The size of the grid used for encryption.
+ * @param startOffset The starting offset in the grid for the encrypted data.
+ * @param metaFilename The name/ path of the file to save the metadata to.
+ */
 void saveEncryptedMeta(uint64_t originalSize,
                        uint32_t gridSize,
                        uint64_t startOffset,
@@ -248,7 +367,7 @@ void saveEncryptedMeta(uint64_t originalSize,
 {
     std::ofstream out(metaFilename, std::ios::binary);
     const uint32_t magic = 0x48505031; // "HPP1"
-    const uint32_t version = 2;        // Version 2: mit StartOffset
+    const uint32_t version = 2;        // Version 2: with StartOffset
     out.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
     out.write(reinterpret_cast<const char *>(&version), sizeof(version));
     out.write(reinterpret_cast<const char *>(&originalSize), sizeof(originalSize));
@@ -256,6 +375,17 @@ void saveEncryptedMeta(uint64_t originalSize,
     out.write(reinterpret_cast<const char *>(&startOffset), sizeof(startOffset));
 }
 
+/**
+ * @brief Loads metadata about the encrypted data from a binary file.
+ *
+ * Reads the original size, grid size, and start offset of the encrypted data from a binary file.
+ * Needed to itendify the size and location of the message inside the lattice.
+ * @param originalSize Reference to store the original size of the data before encryption.
+ * @param gridSize Reference to store the size of the grid used for encryption.
+ * @param startOffset Reference to store the starting offset in the grid for the encrypted data.
+ * @param metaFilename The name/ path of the file to read the metadata from.
+ * @return true if metadata was successfully loaded, false otherwise.
+ */
 bool loadEncryptedMeta(uint64_t &originalSize,
                        uint32_t &gridSize,
                        uint64_t &startOffset,

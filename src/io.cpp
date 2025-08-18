@@ -6,16 +6,33 @@
 
 namespace
 {
+    /**
+     * @brief Compute the byte offset for this rank's row stripe in a row-major 1D layout.
+     * @param d Row distribution descriptor (offset_rows, grid_size).
+     * @return Starting byte offset from the beginning of the global buffer/file.
+     */
     inline MPI_Offset byte_offset(const RowDist &d)
     {
         return static_cast<MPI_Offset>(d.offset_rows) * d.grid_size; // 1 Byte/Elem
     }
+    /**
+     * @brief Number of bytes owned locally by this rank for row-major storage.
+     * @param d Row distribution descriptor.
+     * @return Local byte count (local_rows * grid_size).
+     */
     inline std::size_t local_bytes(const RowDist &d)
     {
         return static_cast<std::size_t>(d.local_rows) * d.grid_size;
     }
 
-    // einheitliche MPI-Fehlerprüfung
+    /**
+     * @brief Uniform MPI error checking helper.
+     *
+     * Prints a rank-tagged MPI error message and aborts the communicator on failure. Keeps success path branchless.
+     * @param rc MPI return code to check.
+     * @param where Short tag indicating the call site.
+     * @param comm Communicator used for abort and rank retrieval.
+     */
     inline void mpi_check(int rc, const char *where, MPI_Comm comm)
     {
         if (rc == MPI_SUCCESS)
@@ -31,6 +48,21 @@ namespace
     }
 }
 
+/**
+ * @brief Parallel read of a centered plaintext slice into a rank-local buffer (row-striped).
+ *
+ * Each rank owns a contiguous set of rows (RowDist). This function opens the shared file with MPI-IO
+ * and reads only the overlapping subsection that intersects the message interval
+ * [start_offset, start_offset + original_size), pre-filling non-overlapping bytes with zero (padding).
+ * Atomicity can be toggled for correctness/performance trade-offs.
+ * @param path Path to the plaintext input file.
+ * @param dist Row distribution for this rank (offset_rows, local_rows, grid_size).
+ * @param original_size Message size in bytes.
+ * @param start_offset Centering offset of the message within the padded N×N grid.
+ * @param out Destination buffer (resized/filled by this call).
+ * @param atomic_io Set MPI-IO atomicity flag.
+ * @param comm MPI communicator spanning all reading ranks.
+ */
 void parallel_read_plain_chunk(const std::string &path,
                                const RowDist &dist,
                                std::uint64_t original_size,
@@ -70,7 +102,18 @@ void parallel_read_plain_chunk(const std::string &path,
 
     mpi_check(MPI_File_close(&fh), "close plain", comm);
 }
-// == READ (Cipher) ==
+/**
+ * @brief Parallel read of the encrypted (padded) grid in row stripes using MPI-IO.
+ *
+ * Verifies the global file size against the expected padded size, broadcasts the expected size
+ * (lightweight sync), then reads each rank's contiguous row stripe at its byte offset.
+ * @param path Path to the binary cipher file.
+ * @param dist Row distribution for this rank.
+ * @param padded_size_bytes Expected total bytes (N*N).
+ * @param out Destination buffer (resized by this call).
+ * @param atomic_io Set MPI-IO atomicity flag.
+ * @param comm MPI communicator spanning all reading ranks.
+ */
 void parallel_read_cipher_chunk(const std::string &path,
                                 const RowDist &dist,
                                 std::size_t padded_size_bytes,
@@ -114,7 +157,18 @@ void parallel_read_cipher_chunk(const std::string &path,
 
     mpi_check(MPI_File_close(&fh), "close cipher", comm);
 }
-// == WRITE (Cipher) ==
+/**
+ * @brief Parallel write of encrypted row stripes to a shared file via MPI-IO.
+ *
+ * Each rank writes its contiguous row stripe at the correct byte offset. Rank 0 performs a
+ * follow-up resize to set the file size to the known padded size (no global barrier needed).
+ * @param path Output cipher file path.
+ * @param dist Row distribution for this rank.
+ * @param data Source buffer to write (rank-local rows).
+ * @param padded_size_bytes Total padded size (N*N bytes) for final resize.
+ * @param atomic_io Set MPI-IO atomicity flag.
+ * @param comm MPI communicator spanning all writing ranks.
+ */
 void parallel_write_cipher_chunk(const std::string &path,
                                  const RowDist &dist,
                                  const std::vector<std::uint8_t> &data,
@@ -153,6 +207,20 @@ void parallel_write_cipher_chunk(const std::string &path,
     }
 }
 
+/**
+ * @brief Parallel write-back of plaintext, trimmed to the original (unpadded) interval.
+ *
+ * Writes only the subsection that overlaps the original message interval
+ * [start_offset, start_offset + original_size); non-overlapping bytes are omitted.
+ * Rank 0 sets the final file size to the exact original_size.
+ * @param path Output plaintext file path.
+ * @param dist Row distribution for this rank.
+ * @param data Rank-local buffer containing padded grid bytes.
+ * @param original_size Original unpadded message size (bytes).
+ * @param start_offset Centering offset used during encryption.
+ * @param atomic_io Set MPI-IO atomicity flag.
+ * @param comm MPI communicator spanning all writing ranks.
+ */
 void parallel_write_plain_trimmed(const std::string &path,
                                   const RowDist &dist,
                                   const std::vector<std::uint8_t> &data,
@@ -204,6 +272,18 @@ void parallel_write_plain_trimmed(const std::string &path,
     }
 }
 
+/**
+ * @brief Parallel frame dump of the full padded grid for visualization or debugging.
+ *
+ * Rank 0 first sets the global file size; all ranks then write their row stripes collectively
+ * using MPI_File_write_at_all for alignment and throughput.
+ * @param path Output frame file path.
+ * @param dist Row distribution for this rank.
+ * @param data Rank-local buffer to dump.
+ * @param padded_size_bytes Total padded size (N*N bytes).
+ * @param atomic_io Set MPI-IO atomicity flag.
+ * @param comm MPI communicator spanning all ranks.
+ */
 void dump_frame_parallel(const std::string &path,
                          const RowDist &dist,
                          const std::vector<std::uint8_t> &data,
@@ -234,6 +314,17 @@ void dump_frame_parallel(const std::string &path,
     mpi_check(MPI_File_close(&fh), "close frame", comm);
 }
 
+/**
+ * @brief Read encryption metadata on rank 0 (magic/versioned header).
+ *
+ * Supports current header (magic "HPP1", version >= 2 with start_offset) and a legacy two-field
+ * fallback when magic/version are absent. Populates original_size, grid_size_n and start_offset.
+ * @param meta_path Path to metadata file.
+ * @param original_size Output: original plaintext size.
+ * @param grid_size_n Output: grid size N.
+ * @param start_offset Output: centering offset used during encryption.
+ * @return true on success, false otherwise.
+ */
 bool read_meta_rank0(const std::string &meta_path,
                      std::uint64_t &original_size,
                      std::uint32_t &grid_size_n,
@@ -284,6 +375,16 @@ bool read_meta_rank0(const std::string &meta_path,
     }
 }
 
+/**
+ * @brief Write metadata (magic + versioned header) on rank 0.
+ *
+ * Emits magic "HPP1" and version 2, followed by original_size, grid_size_n and start_offset.
+ * @param meta_path Output path for metadata file.
+ * @param original_size Original plaintext size.
+ * @param grid_size_n Grid size N.
+ * @param start_offset Centering offset used during encryption.
+ * @return true on success, false otherwise.
+ */
 bool write_meta_rank0(const std::string &meta_path,
                       std::uint64_t original_size,
                       std::uint32_t grid_size_n,
