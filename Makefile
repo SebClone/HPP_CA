@@ -74,7 +74,7 @@ CXXFLAGS  += $(BASEFLAGS) $(OMPFLAGS)
 LDFLAGS   += $(OMPFLAGS)
 
 # Optional: Architektur-Tuning
-# CXXFLAGS += -march=native
+# CXXFLAGS += -march=native -mtune=native
 
 .PHONY: all clean run info rerun
 
