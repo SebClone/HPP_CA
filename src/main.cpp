@@ -1,8 +1,10 @@
+// see folder /include
 #include "hpp_rules.hpp"
 #include "io.hpp"
 #include "utilities.hpp"
 #include "config.hpp"
 
+// relevant imports (include what you use principle)
 #include <mpi.h>
 #include <vector>
 #include <string>
@@ -14,32 +16,34 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
-#include <type_traits> // std::true_type / std::false_type
+#include <type_traits> // std::true_type // std::false_type
 
+// special datatypes for the grid and the wall mask
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask   = std::vector<std::vector<uint8_t>>;
 
-// Tags für Doppel-Buffer A/B und Richtungen
+// ????????????????????
 constexpr int TAG_FROM_UP_A    = 100;
 constexpr int TAG_FROM_DOWN_A  = 101;
 constexpr int TAG_FROM_UP_B    = 102;
 constexpr int TAG_FROM_DOWN_B  = 103;
-// Links/Rechts erzeugen wir dynamisch: +10 Offset
 
 int main(int argc, char **argv)
-{
+{   
+    // MPI-Setup
     MPI_Init(&argc, &argv);
 
     int rank, nprocs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-    // --- Timing ---
+    // timers
     double t_io_read  = 0.0;
     double t_mask     = 0.0;
     double t_loop     = 0.0;
     double t_io_write = 0.0;
 
+    // Read config and save to variables
     auto cfg = get_config();
     cfg.mode       = parse_mode_from_cli(argc, argv, cfg.mode);
     cfg.grid_size  = parse_grid_from_cli(argc, argv, cfg.grid_size == 0 ? 50 : cfg.grid_size);
@@ -65,6 +69,8 @@ int main(int argc, char **argv)
     const std::string &keyPath  = cfg.key;
     const std::string &outPlain = cfg.output;
 
+    // Print configuration if needed
+    /*
     if (rank == 0)
     {
         std::cout << "Configuration:\n";
@@ -81,14 +87,16 @@ int main(int argc, char **argv)
         std::cout << "Key File: " << keyPath << "\n";
         std::cout << "Output File: " << outPlain << "\n";
     }
+    */
 
     double t_start = MPI_Wtime();
 
+    // Initialise metadata
     uint64_t originalSize = 0;
     int      grid_size    = 0;
     uint64_t start_offset = 0;
 
-    // passender 64-bit Typ
+    // initialise MPI datatype for uint64_t (precautionary measure vor portability
     MPI_Datatype MPI_UINT64_MATCHED;
     int rc = MPI_Type_match_size(MPI_TYPECLASS_INTEGER, 8, &MPI_UINT64_MATCHED);
     if (rc != MPI_SUCCESS)
@@ -97,7 +105,8 @@ int main(int argc, char **argv)
         MPI_UINT64_MATCHED = MPI_UNSIGNED_LONG_LONG;
     }
 
-    // Größe/Offset bestimmen (Rank 0)
+    // Read or initialise metadata (original size, grid size, start offset)
+    // we use ?????
     if (rank == 0)
     {
         uint64_t local_start_offset = 0;
@@ -151,10 +160,12 @@ int main(int argc, char **argv)
         start_offset = local_start_offset;
     }
 
+    // Broadcast metadata to all ranks
     MPI_Bcast(&originalSize, 1, MPI_UINT64_MATCHED, 0, MPI_COMM_WORLD);
     MPI_Bcast(&grid_size,    1, MPI_INT,           0, MPI_COMM_WORLD);
     MPI_Bcast(&start_offset, 1, MPI_UINT64_MATCHED,0, MPI_COMM_WORLD);
 
+    // noch gebraucht ????
     if (nprocs > grid_size)
     {
         if (rank == 0)
@@ -162,26 +173,7 @@ int main(int argc, char **argv)
         MPI_Abort(MPI_COMM_WORLD, 2);
     }
 
-    // -------------------------
-    // 1) 2D-Cartesische Topologie
-    // -------------------------
-    int dims[2] = {0,0};
-    MPI_Dims_create(nprocs, 2, dims);
-    int periods[2] = {1,1};
-    int reorder = 0;
-    MPI_Comm cart_comm;
-    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, reorder, &cart_comm);
-
-    int up, down, left, right;
-    MPI_Cart_shift(cart_comm, 0, 1, &up,   &down);
-    MPI_Cart_shift(cart_comm, 1, 1, &left, &right);
-
-    int coords[2];
-    MPI_Cart_coords(cart_comm, rank, 2, coords);
-
-    // -------------------------
-    // 2) 1D-RowDist für I/O (behalten)
-    // -------------------------
+    // Data structure for reading/writing in localized chunks
     RowDist dist1D{};
     dist1D.grid_size = grid_size;
     {
@@ -192,10 +184,10 @@ int main(int argc, char **argv)
     }
     const std::size_t paddedBytes = static_cast<std::size_t>(grid_size) * grid_size;
 
-    // lokaler 1D-Block (komplette Breite N) für I/O
+    // rank specific chunck that will be written to or read from
     std::vector<uint8_t> local_core_1d(static_cast<std::size_t>(dist1D.local_rows) * grid_size);
 
-    // --- Timing: I/O READ (1D) ---
+    // Read the initial input (either plain message or binary encrypted data)
     double t_io_r0 = MPI_Wtime();
     if (doEncrypt)
         parallel_read_plain_chunk(inPlain, dist1D, originalSize, start_offset, local_core_1d, false, MPI_COMM_WORLD);
@@ -203,9 +195,24 @@ int main(int argc, char **argv)
         parallel_read_cipher_chunk(encBin, dist1D, paddedBytes, local_core_1d, false, MPI_COMM_WORLD);
     t_io_read += (MPI_Wtime() - t_io_r0);
 
-    // -------------------------
-    // 3) 2D-Blockgrößen (für Rechenphase)
-    // -------------------------
+
+    // Define 2D geometry for domain decomposition
+    int dims[2] = {0,0};
+    MPI_Dims_create(nprocs, 2, dims);
+    int periods[2] = {1,1}; // Torus topology (wrap-around in up/down and left/right directions)
+    int reorder = 0; // 0 necessary for torus topology
+    MPI_Comm cart_comm;
+    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, reorder, &cart_comm);
+
+    // Get the neighboring rank's in the 2D geometry
+    int up, down, left, right;
+    MPI_Cart_shift(cart_comm, 0, 1, &up,   &down);
+    MPI_Cart_shift(cart_comm, 1, 1, &left, &right);
+
+    int coords[2];
+    MPI_Cart_coords(cart_comm, rank, 2, coords);
+
+    // 2D block geometry for the grid calculations
     auto split_dim = [](int N, int dim, int coord, int &off, int &len){
         int base = N / dim;
         int rem  = N % dim;
@@ -216,7 +223,7 @@ int main(int argc, char **argv)
     split_dim(grid_size, dims[0], coords[0], off_rows_2d, local_rows_2d);
     split_dim(grid_size, dims[1], coords[1], off_cols_2d, local_cols_2d);
 
-    // Hilfstabellen: für alle Ranks 2D-Blockinfos + 1D-Rowinfos
+    // ???
     struct BlockInfo { int off_r, rows, off_c, cols; };
     std::vector<BlockInfo> allBlocks(nprocs);
     std::vector<int> row_off_1d(nprocs), row_len_1d(nprocs);
@@ -238,11 +245,7 @@ int main(int argc, char **argv)
         row_off_1d[p] = r_pr * rows_per + std::min(r_pr, rem);
     }
 
-    // -------------------------
-    // 4) Row(1D) → Block(2D): Alltoallv + Pack/Unpack
-    //    Ziel: gridBufA (mit Halos) füllen
-    // -------------------------
-    // Doppel-Buffer mit 2D-Halos (Breite = local_cols_2d + 2)
+    // Prepare the grid buffers for the 2D block
     std::vector<uint8_t> gridBufA(static_cast<std::size_t>(local_rows_2d + 2) * (local_cols_2d + 2));
     std::vector<uint8_t> gridBufB(static_cast<std::size_t>(local_rows_2d + 2) * (local_cols_2d + 2));
     auto idx = [W = (local_cols_2d + 2)](int i, int j) -> std::size_t {
@@ -325,9 +328,7 @@ int main(int argc, char **argv)
         }
     }
 
-    // -------------------------
-    // 5) Wall-Mask generieren/laden + Broadcast
-    // -------------------------
+    // Generate new wall_mask or load existing one
     double t_mask0 = MPI_Wtime();
     MPI_Barrier(MPI_COMM_WORLD);
     Mask wall_mask;
@@ -346,6 +347,7 @@ int main(int argc, char **argv)
         }
     }
 
+    // Broadcast the wall mask to all ranks
     std::vector<uint8_t> wall_flat(static_cast<std::size_t>(grid_size) * grid_size);
     if (rank == 0) {
         for (int r = 0; r < grid_size; ++r)
@@ -364,21 +366,20 @@ int main(int argc, char **argv)
     }
     t_mask += (MPI_Wtime() - t_mask0);
 
-    // -------------------------
-    // 6) Spaltentyp für Halo-Austausch
-    // -------------------------
+
+    // Define column type for halo exchange
     MPI_Datatype COL_TYPE;
-    int rowStride = local_cols_2d + 2; // <<< WICHTIG: lokale Zeilenbreite (inkl. Halos)
+    int rowStride = local_cols_2d + 2; // local columns + 2 for halos
     MPI_Type_vector(local_rows_2d, 1, rowStride, MPI_BYTE, &COL_TYPE);
     MPI_Type_commit(&COL_TYPE);
 
-    // aktive/target Buffer
+    // Prepare the grid buffers for the main loop
     uint8_t *active_ptr = gridBufA.data();
     uint8_t *target_ptr = gridBufB.data();
 
-    // -------------------------
-    // 7) Compile-Time Dispatch: Haupt-Loop
-    // -------------------------
+
+    // ---------------- Main loop ----------------
+    // Find out if we are in encryption or decryption mode at compile time
     auto run_main_loop = [&](auto ENC_TAG) {
         constexpr bool ENCRYPT = decltype(ENC_TAG)::value;
 
