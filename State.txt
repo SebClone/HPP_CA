@@ -47,8 +47,19 @@ Propagation:
         The difrence in the order comes down to the assumtion of the starting point since it is an cyclic iteration.
         Each partical moves to the direction they are in, so an South partical will move to the bottom neighbour and so forth. 
     >   It will be implementet like this:
-        if (current_cell & 0b00001000) (Checks wehter in the current cell is an north partical)
-            upper neighbour =| 0b00001000 (Gives the upper neighbour the north partical. This functions as an addition. So the upper neighbour gets an north particel independent wether it has an east, south or west partical)
+        if (current_cell & 0b00001000); // Checks wehter in the current cell is an north partical
+            upper neighbour =| 0b00001000; // Gives the upper neighbour the north partical. This functions as an addition. So the upper neighbour gets an north particel independent wether it has an east, south or west partical
+            current_cell &=~0b00000010; // Clears the north particle from the current cell
+
+
+Inverse-Propagation:
+    -   For Decryption process the HPP runs inverted. The Propagation rules are not simply reversable since the functions are not symmetric like collision or reflection.
+        The idea stays the same yet the particlels are propagating in the opposite direction. So a North particle would propagate from the neighbour above to the center cell. An East particle would propagate from the neigbour to the right to the center cell and so on.
+    >   It will be implementet like this:
+        if (upper neighbour & 0b00001000) // Checks wether the upper neighbour cell has an north particle
+            center_cell =| 0b00001000; // Gives the center cell a north particle
+            upper_neighbour &= ~0b00000010; // Clears the north particle from the upper_neighbour
+
 
 Reflection:
     -   In this lattice there are obstical or walls, as touchted above. on these a partical is not only deflected but relfected. So it chages its direction 180˚.
