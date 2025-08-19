@@ -1,11 +1,12 @@
 __(englisch Version below)__
 
-# Dokumentation für das Projekt "HPP-Automaton" im Modul parallel computing.
+# Dokumentation für das Projekt "HPP-Automat" im Modul "Parallel Computing"
+
 Von Samuel Orth und Sebastian Roth.
 
-## TldR:
+## Tldr:
 Symmetrischer Verschlüsselungsalgorithmus auf Basis eines zellulären Gasautomatens.
-Die Parallelisierung erfolgt mittels MPI und domain-decomposition in 2D Blöcke mit Halo-Zellen Kommunikation der Nachbarn.
+Die Parallelisierung erfolgt mittels MPI und domain-decomposition in 2D Blöcken mit Halo-Zellen Kommunikation der Nachbarn.
 Nachbarschaftskommunikation und Berechnung des unabhängigen inneren Kerns erfolgen überlappend.
 Für den inneren Kern wurde zusätzlich OpenMP verwendet (parallel for).
 
@@ -18,9 +19,12 @@ Für den inneren Kern wurde zusätzlich OpenMP verwendet (parallel for).
 5. Parallelisierung
 6. Allgemeine Hinweise zum Code
 
-## 0)
-Dieses repository implementiert einen Lattice Gas Cellular Automaton - ein symmetrischer (...) nach dem Vorbild von (...).
-Im Rahmen dieses Projekt wurde die encryption/decryption mithilfe von MPI und OpenMP parallelisisert
+## 0) Projektinfo
+Dieses repository implementiert einen Lattice Gas Cellular Automaton - ein symmetrischer Verschlüssenlungsalgorithmus nach dem Vorbild von 
+Laurent Signac's ["Lattice Gas Symmetric Cryptography"](https://doi.org/10.48550/arXiv.1306.1519).
+Nachrichten im Binärformatwerden in einer Matrix aus uint8_t Variablen abgespeichert und unter Einsatz spezieller Regeln (siehe 3.) iterativ verändert - die Bits der Nachricht bewegen sich wie "Teilchen" in einer Gitterbox.
+Als Schlüssel fungiert die Position sogenannter Wandzellen im Gitter, die nur der Empfänger der Nachricht erhält und über "rückwärts abspulen" des Verschlüsselten Zustandes die Ausgangsnachricht entschlüsseln kann.
+Ohne genaue Position der Wandzellen ist keine eindeutige Rekonstruktion der Nachricht möglich.
 
 ## 1) Nutzung
 Wir nutzen ein Makefile (/Makefile) und eine Konfigurationsdatei (/include/config.hpp, /src/config.cpp).
@@ -53,7 +57,7 @@ make run NP=8 RUN_ARGS='-x OMP_NUM_THREADS=4' APP_ARGS='--decrypt"
 * /include/ enthält alle .hpp Header.
 * /src/ enthält alle .cpp Quellfiles.
 * /.build/ enthält alle automatisch erzeugten build-objekte.
-* /results/ enthält alle von uns produzierten Graphen, Tabellen etc.
+* /results/ enthält alle von uns produzierten ERgebnisse, wie Graphen, Tabellen etc.
 * /data/ enthält alle input und output files, die wichtig für den Encryption und Decryption Modus sind. 
 
 ## 3) Umsetzung des HPP-Automaten
