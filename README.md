@@ -15,7 +15,7 @@ Für den inneren Kern wurde zusätzlich OpenMP verwendet.
 1. Nutzung
 2. Projektstuktur
 3. Umsetzung des HPP-Automaten
-4. Desing-Choices
+4. Designentscheidungen
 5. Parallelisierung
 6. Allgemeine Hinweise zum Code
 
@@ -44,14 +44,17 @@ Einstellbar in der Config sind:
 Einstellungen im Makefile:
 - mpic++ Compiler
 - build target heißt "hpp_mpi_app"
-- basis flags für (...) -std=c++20 -Wall -Wextra -Wpedantic
-- OpenMP:
-- Laufzeitparameter: 
-- CLI Flag:
+- Basis-Flags: -std=c++20 -Wall -Wextra -Wpedantic
+- Optimiert standardmäßig it -O3 (es sei denn BUILD=debug ist gesetzt)
+- OpenMP wird genutzt (es sei denn OMP=0 wird gesetzt)
+- Laufzeitparameter: - NP=4 (Zahl MPI-Prozesse)
+                     - RUN_ARGS=("") geht an mpirun
+                     - APP_ARGS=("") geht ans Programm
+- CLI Flag: --encrypt und --decrypt legen Modus fest (Übergabe an APP_ARGS oder einfach make encrypt bzw. make decrypt)
 
 Beispielverwendung:
-make encrypt
-make run NP=8 RUN_ARGS='-x OMP_NUM_THREADS=4' APP_ARGS='--decrypt"
+- make encrypt
+- make run NP=8 RUN_ARGS='-x OMP_NUM_THREADS=4' APP_ARGS='--decrypt"
 
 ## 2) Projektstuktur
 * /include/ enthält alle .hpp Header.
@@ -66,30 +69,27 @@ Das Grid ist standardmäßig als Torus angelegt (Randspalten und Randzeilen sind
 
 ## 4) Parallelisierung
 Wir verwenden MPI zur Zerlegung des Grids in 2D-Blöcke (domain-decomposition).
-Aufgrund der Torus-Topologie des Grids besitzt jeder Block 2 Nachbarn (up/down und right/left).
+Aufgrund der Torus-Topologie des Grids besitzt jeder Block 4 Nachbarn (up/down und right/left).
 Für solche Aufgaben stellt MPI die MPI_Cart Befehlsgruppe zur Verfügung.
-Für den Übergang von "Teilchen" zwischen Domänen müssen diese miteinader kommunizieren. 
-Dies geschieht über das Einführen von zusätzlichen Ghost-Zellen (auch Halo-Zellen) an den Rändern jedes 2D-Blocks.
-
+Für den Übergang von "Teilchen" zwischen Domänen müssen diese miteinander kommunizieren.
+Dies geschieht über das Einführen von zusätzlichen Ghost-Zellen (auch Halo-Zellen) an den Rändern jedes 2D-Blocks, in die in jedem Iterationsschritt die Werte den vier Nachbarn neu eingespielt werden (MPI_Isend, MPI_Irecv jeder Randspalte/Randzeile).
 Mit der Nutzung von MPI_Isend und MPI_Irecv kann die Kommunikation der Halo-Zellen überlappend mit der Berechnung der inneren (von den Halo-Zellen unabhängigen) Zellen erfolgen.
-Die Synchronisation erfolgt mittels eines nachgeschalteten MPI_Wait(...).
-Nach Erhalt der Informationen aus benachbarten Randzellen werden können die Randzellen jedes Blockes per pragma omp parallel for berechnet werden.
+Die Synchronisation erfolgt mittels eines nachgeschalteten MPI_Waitall.
+Nach Erhalt der Informationen aus benachbarten Randzellen werden können die Randzellen jedes Blockes per "pragma omp simd" berechnet werden.
+Alle Anwendung der HPP-Regeln erfolgt im Algorithmus für jeden Rank Zellenweise, jedoch müssen sich die Bits so Verhalten, als wenn sie gleichzeitig propagiert würden.
+Daher wird mit einem Doppel-Buffer System gearbeitet (Berechnung auf Basis des aktuellen Zustandes in Buffer A, schreiben des neuen Zustandes in Buffer B --> wechsel der Buffer nach jeder Iteration).
 
+Fußnote: MPI wurde auch zur Parallelsierung für einlesen und schreiben der Daten in 1D-Zeilenstreifen verwendet (siehe io.cpp)
+Jedoch ist bei standard Gridgrößen und Nachrichtenlängen die Laufzeit zu >98% im Haupt-Loop, das Hauptaugemnerk liegt hier also auf der Parallelisierung dieses Loops.
 
-
-
-
-Fußnote: MPI wurde auch zur Parallelsierung für einlesen und schreiben der Daten verwendet (siehe io.cpp), jedoch ist bei standard Gridgrößen und Nachrichtenlängen die Laufzeit zu > 98% im Haupt-Loop. 
-Das Hauptaugemnerk liegt also auf der Parallelisierung dieses Loops.
-
-## 5) Desing-Choices
-- Wir speichern zusätzliche Metadaten (Originalgröße der Nachricht, Beginn der Nachricht im Grid, Gridgröße) in einem separaten File.
-- Denkbar wäre auch die Verwendung eines "Stopp-bytes" um Ende (und ggf. Beginn) der Nachricht zu markieren.
+## 5) Designentscheidungen
+- Wir speichern zusätzliche Metadaten (Originalgröße der Nachricht, Beginn der Nachricht im Grid, Gridgröße) in einem separaten File. Denkbar wäre auch die Verwendung eines "Stopp-bytes" um Ende (und ggf. Beginn) der Nachricht zu markieren.
 - Die Gridgröße richtet sich standarmäßig nach der Größe der Nachricht. Feste Gridgrößen sind jedoch ebenfalls einstellbar und wurden zur Erzeugung der Ergebnisse verwendet.
+- Wir verwenden Standardmäßig Textnachrichten zum testen der Verschlüsselung. Da der Algorithmus mit Binärdaten arbeitet ließen sich im Prinzipa auch andere Datenformate verschlüsseln.
 
 ## 6) Allgemeine Hinweise zum Code
 -Die include Befehle jedes Files erfolgen nach dem "include what you use" Prinzip.
--Das etwas längliche umrechnen und mappen (...)
+-Das etwas längliche umrechnen und mappen von 1D <-> 2D mit MPI_Alltoallw ist dem geschuldet, dass die Funktionen in io.cpp zuest für 1D Zeilenstreifen ausgelegt waren. Somit war ein Adapter nötig.
 
 
 
