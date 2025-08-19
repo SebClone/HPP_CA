@@ -22,7 +22,7 @@
 using Matrix = std::vector<std::vector<uint8_t>>;
 using Mask = std::vector<std::vector<uint8_t>>;
 
-// ????????????????????
+// Specific communication tags for halo transfer (eliminate risk for duplicate meaning)
 constexpr int TAG_FROM_UP_A = 100;
 constexpr int TAG_FROM_DOWN_A = 101;
 constexpr int TAG_FROM_UP_B = 102;
@@ -107,7 +107,6 @@ int main(int argc, char **argv)
     }
 
     // Read or initialize metadata (original size, grid size, start offset)
-    // we use ?????
     if (rank == 0)
     {
         uint64_t local_start_offset = 0;
@@ -168,7 +167,7 @@ int main(int argc, char **argv)
     MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&start_offset, 1, MPI_UINT64_MATCHED, 0, MPI_COMM_WORLD);
 
-    // Still needed ????
+    // Abort
     if (nprocs > grid_size)
     {
         if (rank == 0)
@@ -226,7 +225,6 @@ int main(int argc, char **argv)
     split_dim(grid_size, dims[0], coords[0], off_rows_2d, local_rows_2d);
     split_dim(grid_size, dims[1], coords[1], off_cols_2d, local_cols_2d);
 
-    // ???
     struct BlockInfo
     {
         int off_r, rows, off_c, cols;
