@@ -8,7 +8,7 @@ Von Samuel Orth und Sebastian Roth.
 Symmetrischer Verschlüsselungsalgorithmus auf Basis eines zellulären Gasautomatens.
 Die Parallelisierung erfolgt mittels MPI und domain-decomposition in 2D Blöcken mit Halo-Zellen Kommunikation der Nachbarn.
 Nachbarschaftskommunikation und Berechnung des unabhängigen inneren Kerns erfolgen überlappend.
-Für den inneren Kern wurde zusätzlich OpenMP verwendet (parallel for).
+Für den inneren Kern wurde zusätzlich OpenMP verwendet.
 
 ## Inhaltverzeichnis:
 0. Projektinfo
@@ -29,25 +29,25 @@ Ohne genaue Position der Wandzellen ist keine eindeutige Rekonstruktion der Nach
 ## 1) Nutzung
 Wir nutzen ein Makefile (/Makefile) und eine Konfigurationsdatei (/include/config.hpp, /src/config.cpp).
 Einstellbar in der Config sind:
-- iterations             (typ: integer , default: 1000, Aufgabe: Anzahl der Iterationen des Haupt-loops)
-- grid_size              (typ: integer , default: automatisch, Aufgabe: Größe des Gitters, in der die Nachricht eingelesen wird)
-- wall_density           (typ: double  , default: 0.10, Aufgabe: Verhältnis Wandzellen zu freien Gitterzellen (Bereich [0.0, 1.0]))
-- seed                   (typ: uint64_t, default: random, Aufgabe: Seed für die randomisierte Verteilung der Wanzellen)
-- dump_frames            (typ: boolean , default: false, Aufgabe: Speichert zwischendurch "Snapshots" des aktuellen Grids)
-- frame_interval         (typ: integer , default: 10, Aufgabe: Abstand in dem Snapshots gespeichert werden)
-- input                  (typ: string  , default: "", Aufgabe: Pfad zur Originalnachricht (für Encryption))
-- enc_bin                (typ: string  , default:, Aufgabe: Pfad zur verschlüsselten Nachricht (für Encryption und Decryption))
-- meta                   (typ: string  , default:, Aufgabe: Pfad zu den Metadaten (für Encryption und Decryption))
-- key                    (typ: string  , default:, Aufgabe: Pfad zum key (für Encryption und Decryption))
-- output                 (typ: string  , default:, Aufgabe: Pfad zur Entschlüsselten Nachricht (für Decryption))
+- iterations             (typ: integer , default: 1000,                         Aufgabe: Anzahl der Iterationen des Haupt-loops)
+- grid_size              (typ: integer , default: automatisch,                  Aufgabe: Größe des Gitters, in der die Nachricht eingelesen wird)
+- wall_density           (typ: double  , default: 0.10,                         Aufgabe: Verhältnis Wandzellen zu freien Gitterzellen (Bereich [0.0, 1.0]))
+- seed                   (typ: uint64_t, default: random,                       Aufgabe: Seed für die randomisierte Verteilung der Wanzellen)
+- dump_frames            (typ: boolean , default: false,                        Aufgabe: Speichert zwischendurch "Snapshots" des aktuellen Grids)
+- frame_interval         (typ: integer , default: 10,                           Aufgabe: Abstand in dem Snapshots gespeichert werden)
+- input                  (typ: string  , default: "data/message.txt",           Aufgabe: Pfad zur Originalnachricht)
+- enc_bin                (typ: string  , default: "data/encrypted_full.bin",    Aufgabe: Pfad zur verschlüsselten Nachricht)
+- meta                   (typ: string  , default: "data/encrypted_full.meta",   Aufgabe: Pfad zu den Metadaten)
+- key                    (typ: string  , default: "data/wall_mask.key",         Aufgabe: Pfad zum Key)
+- output                 (typ: string  , default: "data/decrypted_message.txt", Aufgabe: Pfad zur Entschlüsselten Nachricht)
 
 Einstellungen im Makefile:
--mpic++ Compiler
--build target heißt "hpp_mpi_app"
--basis flags für (...) -std=c++20 -Wall -Wextra -Wpedantic
--OpenMP:
--Laufzeitparameter: 
--CLI Flag:
+- mpic++ Compiler
+- build target heißt "hpp_mpi_app"
+- basis flags für (...) -std=c++20 -Wall -Wextra -Wpedantic
+- OpenMP:
+- Laufzeitparameter: 
+- CLI Flag:
 
 Beispielverwendung:
 make encrypt
