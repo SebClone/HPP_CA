@@ -15,8 +15,8 @@ uint8_t Bit = xxxxxxxx
 
 ```
 uint8_t Bit = xxxx|xxxx
-                   ↑     ↑
-                High   Low
+              ↑     ↑
+            High   Low
 ```
 
 ### Wall Bit (High Bits)
