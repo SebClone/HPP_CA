@@ -74,12 +74,12 @@ Die Nachricht kann mit einem start_offset in das grid geschrieben werden.
 Für den HPP-Zellautomaten sind nur die low-bits relevant. Diese sind wie folgt codiert:
 - One particle:
 
-  - `Bit = xxxx|1000` → North
-  - `Bit = xxxx|0100` → East
-  - `Bit = xxxx|0010` → South
+  - `Bit = xxxx|1000` → Nord
+  - `Bit = xxxx|0100` → Ost
+  - `Bit = xxxx|0010` → Süd
   - `Bit = xxxx|0001` → West
 
-Für die Simmulation werden die HPP-Regeln verwendet. Diese sind in (link) HPP_states.md detailiert beschrieben.
+Für die Simmulation werden die HPP-Regeln verwendet. Diese sind in [HPP States](HPP_states.md) detailiert beschrieben.
 Die Wall-Bit-Maske wird dabei parallel als eine 2D-matrix (dtype=bolean) der selben größe angelegt. Durch die seperate Behandlung der Mask wird verhindert, dass Informationen der original Datei verloren gehen , wenn das erste high-bit manipuliert wird.
 
 Zur Encryption wird Collision -> Propagation -> Refelction nacheinander auf das grid angewendet.
@@ -137,7 +137,13 @@ Any message/file is read in as bytes/bits and written to the 2D matrix, i.e., th
 The message can be written to the grid with a start_offset.
 
 Only the low bits are relevant for the HPP cellular automaton. These are encoded as follows:
-original file is lost if the first high bit is manipulated.
+  - `Bit = xxxx|1000` → North
+  - `Bit = xxxx|0100` → East
+  - `Bit = xxxx|0010` → South
+  - `Bit = xxxx|0001` → West
+
+The HPP rules are used for the simulation. These are described in detail in [HPP States](HPP_states.md).
+The wall bit mask is created in parallel as a 2D matrix (dtype=boolean) of the same size. Separate handling of the mask prevents information from the original file from being lost when the first high bit is manipulated.
 
 For encryption, collision -> propagation -> reflection is applied to the grid in succession.
 For decryption, reflection -> inverse propagation -> collision is applied to the grid in succession.
