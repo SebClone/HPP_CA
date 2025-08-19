@@ -30,7 +30,8 @@ uint8_t collision(uint8_t current_cell, bool is_wall)
  * @brief Propagates particles in the HPP model. SEQUENTIAL
  *
  * Function is best used in a sequential context. For parallel processing, use the `applyRules_fast` function.
- * Takes the current cell and its neighbors, and propagates particles according to the HPP rules. For more details see the HPP_states.mdm
+ * Takes the current cell and its neighbors, and propagates particles according to the HPP rules.
+ * NOTE: For more details see the HPP_states.mdm
  * @param center The current cell value (8 bits).
  * @param up The value of the cell above the current cell.
  * @param down The value of the cell below the current cell.
@@ -115,7 +116,8 @@ uint8_t inverse_reflection(uint8_t current_cell, bool is_wall)
  *
  * Takes the current cell and its neighbors, and propagates particles according to the HPP rules in reverse.
  * This is used in decryption to reconstruct the original particle configuration.
- * North particles are taken from the UP cell, South particles from the DOWN cell, East particles from the RIGHT cell, and West particles from the LEFT cell.
+ * North particles are taken from the UP cell, South particles from the DOWN cell,
+ * East particles from the RIGHT cell, and West particles from the LEFT cell.
  * @param center The current cell value (8 bits).
  * @param up The value of the cell above the current cell.
  * @param down The value of the cell below the current cell.
@@ -130,7 +132,6 @@ void inverse_propagate(uint8_t &center, uint8_t &up, uint8_t &down, uint8_t &lef
         center |= 0b00001000;
         down &= ~0b00001000;
     }
-
     // South particle came from UP cell (i.e., came down)
     if (up & 0b00000010)
     {

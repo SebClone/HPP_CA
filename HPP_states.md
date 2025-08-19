@@ -96,11 +96,30 @@ After the collision step (or before—it is symmetric due to cyclic behavior), p
 **Example Implementation**:
 
 ```cpp
-if (current_cell & 0b00001000) // North particle present
-    upper_neighbor |= 0b00001000; // Add North particle to upper neighbor
+if (current_cell & 0b00001000); // Checks wehter in the current cell is an north partical
+  upper neighbour =| 0b00001000; // Gives the upper neighbour the north partical. This functions as an addition. So the upper neighbour gets an north particel independent wether it has an east, south or west partical
+  current_cell &=~0b00000010; // Clears the north particle from the current cell
 ```
 
 > This logic ensures particle states are added to neighbors regardless of existing directions.
+
+## Inverse-propagation Rules
+
+For Decryption process the HPP runs inverted. The Propagation rules are not simply reversable since the functions are not symmetric like collision or reflection.
+The idea stays the same yet the particlels are propagating in the opposite direction. So a North particle would propagate from the neighbour above to the center cell. An East particle would propagate from the neigbour to the right to the center cell and so on.
+
+- upper neighbour → N particle
+- right neighbour → E particle
+- lower neighbour → S particle
+- left neighbour → W particle
+
+**Example Implementation**:
+
+```cpp
+if (upper neighbour & 0b00001000) // Checks wether the upper neighbour cell has an north particle
+    center_cell =| 0b00001000; // Gives the center cell a north particle
+    upper_neighbour &= ~0b00000010; // Clears the north particle from the upper_neighbour
+```
 
 ## Reflection Rules
 
