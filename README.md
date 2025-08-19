@@ -108,6 +108,7 @@ Für solche Aufgaben stellt MPI die MPI_Cart Befehlsgruppe zur Verfügung.
 Für den Übergang von "Teilchen" zwischen Domänen müssen diese miteinander kommunizieren.
 Dies geschieht über das Einführen von zusätzlichen Ghost-Zellen (auch Halo-Zellen) an den Rändern jedes 2D-Blocks, in die in jedem Iterationsschritt die Werte den vier Nachbarn neu eingespielt werden (MPI_Isend, MPI_Irecv jeder Randspalte/Randzeile).
 Mit der Nutzung von MPI_Isend und MPI_Irecv kann die Kommunikation der Halo-Zellen überlappend mit der Berechnung der inneren (von den Halo-Zellen unabhängigen) Zellen erfolgen.
+Hierfür wird zusätzlich OpenMP (omp pragma parallel for) genutzt
 Die Synchronisation erfolgt mittels eines nachgeschalteten MPI_Waitall.
 Nach Erhalt der Informationen aus benachbarten Randzellen werden können die Randzellen jedes Blockes per "pragma omp simd" berechnet werden.
 Alle Anwendung der HPP-Regeln erfolgt im Algorithmus für jeden Rank Zellenweise, jedoch müssen sich die Bits so Verhalten, als wenn sie gleichzeitig propagiert würden.
@@ -122,13 +123,69 @@ Jedoch ist bei standard Gridgrößen und Nachrichtenlängen die Laufzeit zu >98%
 - Wir verwenden Standardmäßig Textnachrichten zum testen der Verschlüsselung. Da der Algorithmus mit Binärdaten arbeitet ließen sich im Prinzipa auch andere Datenformate verschlüsseln.
 
 ## 6) Allgemeine Hinweise zum Code
--Die include Befehle jedes Files erfolgen nach dem "include what you use" Prinzip.
--Das etwas längliche umrechnen und mappen von 1D <-> 2D mit MPI_Alltoallw ist dem geschuldet, dass die Funktionen in io.cpp zuest für 1D Zeilenstreifen ausgelegt waren. Somit war ein Adapter nötig.
+- Die include Befehle jedes Files erfolgen nach dem "include what you use" Prinzip.
+- Das etwas längliche umrechnen und mappen von 1D <-> 2D mit MPI_Alltoallw ist dem geschuldet, dass die Funktionen in io.cpp zuest für 1D Zeilenstreifen ausgelegt waren. Somit war ein Adapter nötig.
 
 
+***
 
+# Documentation for the “HPP-Automaton” project for the course “Parallel Computing”.
 
-## English HPP
+By Samuel Orth and Sebastian Roth.
+
+## Tldr:
+Symmetric encryption algorithm based on a cellular automaton.
+Parallelization is achieved using MPI and domain decomposition in 2D blocks with halo cells for neighbor communication.
+Neighbor communication and calculation of the independent inner core are performed in an overlapping manner.
+OpenMP was also used for the inner core.
+
+## Table of contents:
+0. Project information
+1. Usage
+2. Project structure
+3. Implementation of the HPP-Automaton
+4. Design decisions
+5. Parallelization
+6. General notes on the code
+
+## 1) Usage
+We use a Makefile (/Makefile) and a configuration file (/include/config.hpp, /src/config.cpp).
+The following can be set in the config:
+- iterations             (type: integer , default: 1000,                         task: Number of iterations of the main loop)
+- grid_size              (type: integer , default: automatic,                    task: size of the grid in which the message is read)
+- wall_density           (type: double  , default: 0.10,                         task: ratio of wall cells to free grid cells (range [0.0, 1.0]))
+- seed                   (type: uint64_t, default: random,                       task: Seed for the randomized distribution of wall cells)
+- dump_frames            (type: boolean , default: false,                        task: Saves “snapshots” of the current grid at intervals)
+- frame_interval         (type: integer , default: 10,                           task: Interval at which snapshots are saved)
+- input                  (type: string  , default: “data/message.txt”,           task: Path to the original message)
+- enc_bin                (type: string  , default: “data/encrypted_full.bin”,    task: Path to the encrypted message)
+- meta                   (type: string  , default: “data/encrypted_full.meta”,   task: Path to the metadata)
+- key                    (type: string  , default: “data/wall_mask.key”,         task: Path to the key)
+- output                 (type: string  , default: “data/decrypted_message.txt”, task: path to decrypted message)
+
+Settings in the Makefile:
+- mpic++ compiler
+- build target is called “hpp_mpi_app”
+- Basic flags: -std=c++20 -Wall -Wextra -Wpedantic
+- Optimized by default with -O3 (unless BUILD=debug is set)
+- OpenMP is used (unless OMP=0 is set)
+- Runtime parameters: - NP=4 (number of MPI processes)
+                      - RUN_ARGS=(“”) goes to mpirun
+                      - APP_ARGS=("") goes to the application
+- CLI flag: --encrypt and --decrypt set the mode (passed to APP_ARGS or simply make encrypt or make decrypt)
+
+Example usage:
+- make encrypt
+- make run NP=8 RUN_ARGS=‘-x OMP_NUM_THREADS=4’ APP_ARGS='--decrypt"
+
+## 2) Project structure
+* /include/ contains all .hpp headers.
+* /src/ contains all .cpp source files.
+* /.build/ contains all automatically generated build objects.
+* /results/ contains all results produced by us, such as graphs, tables, etc.
+* /data/ contains all input and output files that are important for the encryption and decryption mode.
+
+## 3) Implementation of the HPP-Automaton
 The implementation of all HPP rules is located in /hpp_rules.hpp and /hpp_rules.cpp.
 The HPP cellular automata is a cellular automata with a von Neumann neighborhood. We opted for a torus characteristic. This means that there are no ends to the grid and the edge columns/rows are in direct proximity to each other.
 The automaton is a 2D matrix (dtype=uint8_t) of size grid_size x grid_size, which is defined by terminal input.
@@ -163,6 +220,31 @@ For decryption, reflection -> inverse propagation -> collision is applied to the
     - Right    -> East
     - Down     -> South
     - Left     -> West
+ 
+## 4) Parallelization
+We use MPI to divide the grid into 2D blocks (domain decomposition).
+Due to the torus topology of the grid, each block has 4 neighbors (up/down and right/left).
+MPI provides the MPI_Cart command group for such tasks.
+For the transition of “particles” between domains, they must communicate with each other.
+This is done by introducing additional ghost cells (also called halo cells) at the edges of each 2D block, into which the values of the four neighbors are reloaded in each iteration step (MPI_Isend, MPI_Irecv each edge column/edge row).
+By using MPI_Isend and MPI_Irecv, the communication of the halo cells can overlap with the calculation of the inner cells (independent of the halo cells, is done via pragma omp parallel for).
+Synchronization is performed using a downstream MPI_Waitall.
+After receiving the information from neighboring edge cells, the edge cells of each block can be calculated using “pragma omp simd”.
+All applications of the HPP rules are performed in the algorithm for each rank cell by cell, but the bits must behave as if they were propagated simultaneously.
+Therefore, a double-buffer system is used (calculation based on the current state in buffer A, writing the new state to buffer B --> changing buffers after each iteration).
+
+Footnote: MPI was also used for parallelization for reading and writing data in 1D row strips (see io.cpp).
+However, with standard grid sizes and message lengths, >98% of the runtime is in the main loop, so the main focus here is on parallelizing this loop.
+
+## 5) Design decisions
+- We store additional metadata (original message size, start of message in grid, grid size) in a separate file. It would also be conceivable to use a “stop byte” to mark the end (and, if necessary, the beginning) of the message.
+- The grid size is based on the size of the message by default. However, fixed grid sizes can also be set and were used to generate the results.
+- We use text messages by default to test the encryption. Since the algorithm works with binary data, other data formats could also be encrypted in principle.
+
+## 6) General notes on the code
+-The include commands for each file follow the “include what you use” principle.
+-The somewhat lengthy conversion and mapping of 1D <-> 2D with MPI_Alltoallw is due to the fact that the functions in io.cpp were originally designed for 1D row strips. This meant that an adapter was necessary.
+
 
 
 
