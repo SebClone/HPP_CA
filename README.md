@@ -3,7 +3,11 @@ __(englisch Version below)__
 # Dokumentation für das Projekt "HPP-Automaton" im Modul parallel computing.
 Von Samuel Orth und Sebastian Roth.
 
-## TldR: 
+## TldR:
+Symmetrischer Verschlüsselungsalgorithmus auf Basis eines zellulären Gasautomatens.
+Die Parallelisierung erfolgt mittels MPI und domain-decomposition in 2D Blöcke mit Halo-Zellen Kommunikation der Nachbarn.
+Nachbarschaftskommunikation und Berechnung des unabhängigen inneren Kerns erfolgen überlappend.
+Für den inneren Kern wurde zusätzlich OpenMP verwendet (parallel for).
 
 ## Inhaltverzeichnis:
 0. Projektinfo
@@ -45,11 +49,9 @@ Beispielverwendung:
 make encrypt
 make run NP=8 RUN_ARGS='-x OMP_NUM_THREADS=4' APP_ARGS='--decrypt"
 
-
-
 ## 2) Projektstuktur
 * /include/ enthält alle .hpp Header.
-* /src/ enthält alle .cpp Quellfiles
+* /src/ enthält alle .cpp Quellfiles.
 * /.build/ enthält alle automatisch erzeugten build-objekte.
 * /results/ enthält alle von uns produzierten Graphen, Tabellen etc.
 * /data/ enthält alle input und output files, die wichtig für den Encryption und Decryption Modus sind. 
@@ -65,7 +67,9 @@ Für solche Aufgaben stellt MPI die MPI_Cart Befehlsgruppe zur Verfügung.
 Für den Übergang von "Teilchen" zwischen Domänen müssen diese miteinader kommunizieren. 
 Dies geschieht über das Einführen von zusätzlichen Ghost-Zellen (auch Halo-Zellen) an den Rändern jedes 2D-Blocks.
 
-Mit der Nutzung von MPI_Isend und MPI_Irecv kann die Kommunikation der Halo-Zellen überlappend mit der Berechnung der inneren (von den Halo-Zellen unabhängigen) 
+Mit der Nutzung von MPI_Isend und MPI_Irecv kann die Kommunikation der Halo-Zellen überlappend mit der Berechnung der inneren (von den Halo-Zellen unabhängigen) Zellen erfolgen.
+Die Synchronisation erfolgt mittels eines nachgeschalteten MPI_Wait(...).
+Nach Erhalt der Informationen aus benachbarten Randzellen werden können die Randzellen jedes Blockes per pragma omp parallel for berechnet werden.
 
 
 
@@ -75,11 +79,14 @@ Fußnote: MPI wurde auch zur Parallelsierung für einlesen und schreiben der Dat
 Das Hauptaugemnerk liegt also auf der Parallelisierung dieses Loops.
 
 ## 5) Desing-Choices
-- Wir speichern zusätzliche Metadaten (Originalgröße der Nachricht, Beginn der Nachricht im Grid, Gridgröße) in einem separaten File. Denkbar wäre auch die Verwendung eins "Stopp-bytes" um Ende (und ggf. Beginn) der Nachricht zu markieren.
-- Die Gridgröße richtet sich standarmäßig nach der Größe der Nachricht. Feste Gridgrößen sind jedoch ebenfalls einstellbar und wurden zur Erzeugung der ERgebnisse verwendet.
+- Wir speichern zusätzliche Metadaten (Originalgröße der Nachricht, Beginn der Nachricht im Grid, Gridgröße) in einem separaten File.
+- Denkbar wäre auch die Verwendung eines "Stopp-bytes" um Ende (und ggf. Beginn) der Nachricht zu markieren.
+- Die Gridgröße richtet sich standarmäßig nach der Größe der Nachricht. Feste Gridgrößen sind jedoch ebenfalls einstellbar und wurden zur Erzeugung der Ergebnisse verwendet.
 
 ## 6) Allgemeine Hinweise zum Code
+-Die include Befehle jedes Files erfolgen nach dem "include what you use" Prinzip.
 -Das etwas längliche umrechnen und mappen (...)
+
 
 
 
