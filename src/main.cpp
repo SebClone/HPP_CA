@@ -175,7 +175,7 @@ int main(int argc, char **argv)
         MPI_Abort(MPI_COMM_WORLD, 2);
     }
 
-    // Data structure for reading/writing in localized chunks
+    // Data structure for reading/writing in localized 1D chunks (horicontal stripes)
     RowDist dist1D{};
     dist1D.grid_size = grid_size;
     {
@@ -197,11 +197,12 @@ int main(int argc, char **argv)
         parallel_read_cipher_chunk(encBin, dist1D, paddedBytes, local_core_1d, false, MPI_COMM_WORLD);
     t_io_read += (MPI_Wtime() - t_io_r0);
 
+    // 2D grid definition, block distribution, 1D -> 2D mapping
     // Define 2D geometry for domain decomposition
     int dims[2] = {0, 0};
     MPI_Dims_create(nprocs, 2, dims);
     int periods[2] = {1, 1}; // Torus topology (wrap-around in up/down and left/right directions)
-    int reorder = 0;         // 0 necessary for torus topology
+    int reorder = 0;         
     MPI_Comm cart_comm;
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, reorder, &cart_comm);
 
