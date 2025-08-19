@@ -65,7 +65,41 @@ Beispielverwendung:
 
 ## 3) Umsetzung des HPP-Automaten
 Die Implementation aller HPP-Regeln befindet sich in /hpp_rules.hpp und /hpp_rules.cpp.
-Das Grid ist standardmäßig als Torus angelegt (Randspalten und Randzeilen sind in direkter Nachbarschaft zueinander).
+Der HPP-Cellular Automata ist ein Zellautomat mit einer van Neumann NAchbarschaft. Wir haben uns für eine Torus-charakteristik entschieden. Somit gibt es keine Enden des Gitters und die Randspalten/-zeilen sind in direkter Nachbarschaft zueinander.
+Der Automat besteht aus einer 2D-Matrix (dtype=uint8_t) der größe grid_size x grid_size, die per Termminal eingabe definiert wird.
+
+Eine belibige Nachricht/ Datei wird als bytes/ bits eingelesen und in die 2D_Matrix, also das grid, geschrieben. 
+Die Nachricht kann mit einem start_offset in das grid geschrieben werden.
+
+Für den HPP-Zellautomaten sind nur die low-bits relevant. Diese sind wie folgt codiert:
+- One particle:
+
+  - `Bit = xxxx|1000` → North
+  - `Bit = xxxx|0100` → East
+  - `Bit = xxxx|0010` → South
+  - `Bit = xxxx|0001` → West
+
+Für die Simmulation werden die HPP-Regeln verwendet. Diese sind in (link) HPP_states.md detailiert beschrieben.
+Die Wall-Bit-Maske wird dabei parallel als eine 2D-matrix (dtype=bolean) der selben größe angelegt. Durch die seperate Behandlung der Mask wird verhindert, dass Informationen der original Datei verloren gehen , wenn das erste high-bit manipuliert wird.
+
+Zur Encryption wird Collision -> Propagation -> Refelction nacheinander auf das grid angewendet.
+Zur Decryption wird Reflection -> Inverse-Propagation -> Collision nacheinander auf das grid angewendet.
+
+***HPP-Regeln kurz***
+- Collision: Zwei frontal aufeinander treffende particle (Nord-Süd/ Ost-West) werden um 90 grad rotiert 
+    - `Bit = xxx0|1010` (N + S) ⟶ `Bit = xxx0|0101` (E + W)
+- Reflection: Ist in der Zelle eine Wand wird das Partikel um 180 grad gedreht (reflektiert)
+    - `Bit = xxx1|1000` (N) ⟶ `Bit = xxx1|0010` (S)
+- Propagation: Ein bit wird entlang seiner Richtung an die entsprechende NAchbarzelle weitergegeben
+    - Nord      -> Oben
+    - Ost       -> Rechts
+    - Süd       -> Unten
+    - West      -> Links
+- Inverse-Propagation: Ein bit aus der jeweiligen Nachbarzelle wird entgegen seiner Richtung "zurückgegeben".
+    - Oben      -> Nord
+    - Rechts    -> Ost
+    - Unten     -> Süd
+    - Links     -> West
 
 ## 4) Parallelisierung
 Wir verwenden MPI zur Zerlegung des Grids in 2D-Blöcke (domain-decomposition).
@@ -93,6 +127,36 @@ Jedoch ist bei standard Gridgrößen und Nachrichtenlängen die Laufzeit zu >98%
 
 
 
+
+## English HPP
+The implementation of all HPP rules is located in /hpp_rules.hpp and /hpp_rules.cpp.
+The HPP cellular automata is a cellular automata with a von Neumann neighborhood. We opted for a torus characteristic. This means that there are no ends to the grid and the edge columns/rows are in direct proximity to each other.
+The automaton is a 2D matrix (dtype=uint8_t) of size grid_size x grid_size, which is defined by terminal input.
+
+Any message/file is read in as bytes/bits and written to the 2D matrix, i.e., the grid. 
+The message can be written to the grid with a start_offset.
+
+Only the low bits are relevant for the HPP cellular automaton. These are encoded as follows:
+original file is lost if the first high bit is manipulated.
+
+For encryption, collision -> propagation -> reflection is applied to the grid in succession.
+For decryption, reflection -> inverse propagation -> collision is applied to the grid in succession.
+
+***HPP-ruels brief***
+- Collision: Two particles colliding head-on (north-south/east-west) are rotated by 90 degrees
+    - `Bit = xxx0|1010` (N + S) ⟶ `Bit = xxx0|0101` (E + W)
+- Reflection: If there is a wall in the cell, the particle is rotated 180 degrees (reflected)
+    - `Bit = xxx1|1000` (N) ⟶ `Bit = xxx1|0010` (S)
+- Propagation:  A bit is passed along its direction to the corresponding neighboring cell
+    - North      -> Up
+    - East       -> Right
+    - South       -> Down
+    - West      -> Left
+- Inverse-Propagation: A bit from the respective neighboring cell is “returned” in the opposite direction.
+    - Up      -> North
+    - Right    -> East
+    - Down     -> South
+    - Left     -> West
 
 
 
