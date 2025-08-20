@@ -131,6 +131,7 @@ def strong_scaling_combined(data, grids, num_itrs):
     ax.set_xlabel("Total cores (np × omp_threads)")
     ax.set_ylabel("Speedup vs 1 core")
     ax.set_title(f"Strong scaling — encrypt only; iters={num_itrs}")
+    ax.set_xscale("log", base=2)
     ax.set_ylim(0, 40)  # Adjust as needed
     ax.legend()
     ax.grid(True, linestyle=":")
@@ -207,6 +208,7 @@ def weak_scaling(data, modes, base_grid, num_itrs):
     ax.set_title(f"Weak scaling (normalized), base_grid={base_grid}, iters={num_itrs}")
     ax.legend()
     ax.grid(True, linestyle=":")
+    ax.set_xscale("log", base=2)
     plt.tight_layout()
     out_path = f"results/bench_results/weak_simple_combined_base{base_grid}.png"
     fig.savefig(out_path, dpi=300)
