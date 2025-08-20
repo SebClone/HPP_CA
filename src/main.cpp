@@ -199,8 +199,8 @@ int main(int argc, char **argv)
 
     // 2D grid definition, block distribution, 1D -> 2D mapping
     // Define 2D geometry for domain decomposition
-    int dims[2] = {0, 0};
-    MPI_Dims_create(nprocs, 2, dims);
+    int dims[2] = {0, 0}; // MPI can choose dims freely (initialised with 0)
+    MPI_Dims_create(nprocs, 2, dims); // Creates "optimal" order out of npcrocs blocks
     int periods[2] = {1, 1}; // Torus topology (wrap-around in up/down and left/right directions)
     int reorder = 0;         
     MPI_Comm cart_comm;
@@ -214,7 +214,7 @@ int main(int argc, char **argv)
     int coords[2];
     MPI_Cart_coords(cart_comm, rank, 2, coords);
 
-    // 2D block geometry for the grid calculations
+    // Distributing the grid fairly
     auto split_dim = [](int N, int dim, int coord, int &off, int &len)
     {
         int base = N / dim;
@@ -421,7 +421,7 @@ int main(int argc, char **argv)
             double it0 = MPI_Wtime();
             double t_comm = 0.0, t_inner = 0.0, t_border = 0.0, t_swap = 0.0;
 
-            // 1) Halo transfers
+            // Halo transfers
             double t_post0 = MPI_Wtime();
             MPI_Request reqs[8];
             const bool useA = (active_ptr == gridBufA.data());
@@ -443,7 +443,7 @@ int main(int argc, char **argv)
             MPI_Isend(active_ptr + idx(1, local_cols_2d), 1, COL_TYPE, right, TAG_LEFT, cart_comm, &reqs[7]);          // right inner
             t_comm += (MPI_Wtime() - t_post0);
 
-            // 2) Interior area (without halos)
+            // Interior area (without halos)
             double t_in0 = MPI_Wtime();
             if (local_rows_2d >= 3 && local_cols_2d >= 3)
             {
@@ -474,7 +474,7 @@ int main(int argc, char **argv)
             }
             t_inner += (MPI_Wtime() - t_in0);
 
-            // 3) Wait + borders
+            // Wait + borders
             double t_wait0 = MPI_Wtime();
             MPI_Waitall(8, reqs, MPI_STATUSES_IGNORE);
             t_comm += (MPI_Wtime() - t_wait0);
@@ -553,7 +553,7 @@ int main(int argc, char **argv)
             }
             t_border += (MPI_Wtime() - t_border0);
 
-            // 4) Swap
+            // Swap
             double t_swap0 = MPI_Wtime();
             std::swap(active_ptr, target_ptr);
             t_swap += (MPI_Wtime() - t_swap0);
@@ -561,7 +561,7 @@ int main(int argc, char **argv)
             double t_iter = MPI_Wtime() - it0;
             t_loop += t_iter;
 
-            // 5) Output (MAX)
+            // Output (MAX)
             double local_it[5] = {t_comm, t_inner, t_border, t_swap, t_iter};
             double global_it[5] = {0, 0, 0, 0, 0};
             MPI_Reduce(local_it, global_it, 5, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
@@ -588,9 +588,7 @@ int main(int argc, char **argv)
     // Release datatype
     MPI_Type_free(&COL_TYPE);
 
-    // -------------------------
-    // 8) Block(2D) → Row(1D): Alltoallv back, to keep I/O
-    // -------------------------
+    // Block(2D) → Row(1D): Alltoallv back, to keep I/O
     // result_core_1d: target buffer (without halos), size = dist1D.local_rows * grid_size
     std::vector<uint8_t> result_core_1d(static_cast<std::size_t>(dist1D.local_rows) * grid_size);
 
@@ -677,9 +675,7 @@ int main(int argc, char **argv)
         }
     }
 
-    // -------------------------
-    // 9) Write (1D)
-    // -------------------------
+    // Write (1D)
     double t_io_w0 = MPI_Wtime();
     if (doEncrypt)
     {
@@ -693,9 +689,7 @@ int main(int argc, char **argv)
     }
     t_io_write += (MPI_Wtime() - t_io_w0);
 
-    // -------------------------
-    // 10) Timing Summary
-    // -------------------------
+    // Timing Summary
     {
         double local_sum[4] = {t_io_read, t_mask, t_loop, t_io_write};
         double global_sum[4] = {0, 0, 0, 0};
