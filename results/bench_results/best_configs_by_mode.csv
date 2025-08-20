@@ -1,0 +1,15 @@
+np,omp_threads,mode,grid,runtime_s
+6,1,decrypt,32,0.063736
+8,2,decrypt,64,0.084619
+10,2,decrypt,128,0.160963
+10,2,decrypt,256,0.393859
+10,2,decrypt,1024,5.319869
+10,2,decrypt,2048,20.85611
+10,2,decrypt,4096,83.037362
+8,1,encrypt,32,0.081961
+4,1,encrypt,64,0.111725
+8,2,encrypt,128,0.177801
+10,2,encrypt,256,0.487439
+10,2,encrypt,1024,5.814517
+10,2,encrypt,2048,22.776986
+10,2,encrypt,4096,90.503271

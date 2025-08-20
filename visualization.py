@@ -14,7 +14,7 @@ import struct
 from typing import Optional
 
 # --- Read encrypted_full_meta and parse original size and grid size ---
-meta_path = Path("encrypted_full.meta")
+meta_path = Path("data/encrypted_full.meta")
 with open(meta_path, "rb") as f:
     original_size_bytes = f.read(8)
     original_size = struct.unpack("<Q", original_size_bytes)[0]
@@ -38,7 +38,7 @@ def plot_benchmark_data(processes, times):
     plt.xticks(processes, fontsize=16)
     plt.yticks(fontsize=16)
     plt.grid(True)
-    plt.savefig('visualization_results/benchmark_results.png', dpi=300, bbox_inches='tight')
+    plt.savefig('results/visualization_results/benchmark_results.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 def binary_to_text(binary_data):
@@ -57,7 +57,7 @@ def plot_frame(frame_data, title, gridsize, cmap='gray'):
     plt.imshow(arr_2d.astype(np.int16), cmap=cmap, interpolation='nearest', vmin=0, vmax=255)
     plt.title(title)
     plt.colorbar(label="Value")
-    plt.savefig(f"visualization_results/{title.replace(' ', '_')}.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"results/visualization_results/{title.replace(' ', '_')}.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 def grid_to_bytes_from_nibbles(cells_uint8: np.ndarray,
@@ -144,10 +144,10 @@ def plot_frame_diff(frame_a, frame_b, gridsize, title=None, cmap='bwr'):
     )
     if title is None:
         plt.title("Differenz der Frames")
-        filename = 'visualization_results/frame_diff.png'
+        filename = 'results/visualization_results/frame_diff.png'
     else:
         plt.title(title)
-        filename = f"visualization_results/{title.replace(' ', '_')}.png"
+        filename = f"results/visualization_results/{title.replace(' ', '_')}.png"
     plt.colorbar(label="Delta")
     print("equal:", np.array_equal(frame_a.reshape((24,24)), frame_b.reshape((24,24))))
     print("max abs diff:", max_abs)
@@ -157,7 +157,7 @@ def plot_frame_diff(frame_a, frame_b, gridsize, title=None, cmap='bwr'):
 
 # Animation function for frames
 
-def animate_frames(frames_dict, gridsize, outfile='visualization_results/grid_frames_visualization.mp4', fps=20, cmap='gray'):
+def animate_frames(frames_dict, gridsize, outfile='results/visualization_results/grid_frames_visualization.mp4', fps=20, cmap='gray'):
     """
     Animates a sequence of frames stored in frames_dict and saves as MP4.
     """
@@ -224,18 +224,6 @@ def animate_frame_diffs(frames_dict, gridsize, outfile='visualization_results/fr
     plt.close(fig)
     print(f"Animation saved as {outfile}")
 
-# %% Benchmark data
-# Load benchmarking results
-benchmark_results = pd.read_csv(
-    'hpp_benchmarking_results.txt',
-    sep='|',
-    skipinitialspace=True
-)
-benchmark_results.columns = benchmark_results.columns.str.strip()
-processes = benchmark_results['Prozesse']
-times = benchmark_results['Laufzeit (s)']
-plot_benchmark_data(processes, times)
-
 
 # %% Load grid data
 frames = {}
@@ -251,13 +239,40 @@ for bin_file in bin_files:
 
 # %% Calculate grid size
 example_frame = next(iter(frames.values()))
+
+# --- Reconcile grid size from meta with frame length ---
+# Try to infer gridsize from the first frame if it forms a perfect square
+inferred = int(np.sqrt(example_frame.size))
+if inferred * inferred == example_frame.size:
+    if inferred != grid_size:
+        print(f"[warn] grid_size from meta ({grid_size}) != inferred from frame ({inferred}); using inferred value")
+        grid_size = inferred
+else:
+    # If it isn't a perfect square, try the packed-nibble case (N*N/2 bytes)
+    # i.e., size * 2 should be a perfect square
+    inferred2 = int(np.sqrt(example_frame.size * 2))
+    if inferred2 * inferred2 == example_frame.size * 2:
+        if inferred2 != grid_size:
+            print(f"[warn] frame looks nibble-packed; meta N={grid_size}, inferred N={inferred2}; using meta N for plotting raw bytes")
+        # Keep grid_size from meta for raw plotting; decoding handles nibble packing separately
+    else:
+        raise ValueError(f"Cannot infer grid size from frame of length {example_frame.size}")
+
 # Read image_message.png to get width and height
-with Image.open("image_message.png") as img:
+with Image.open("data/image_message.png") as img:
     width, height = img.size
 # grid_size is now from meta, so no need to override here
 picture_size = [width, height]
 print(f"Grid size: {grid_size}x{grid_size}")
 print(f"Picture size: {picture_size[0]}x{picture_size[1]}")
+
+# --- Always show the first frame as a raw grid (no decoding) ---
+# Ensures we can inspect the grid even if it looks like random pixels
+Path("results/visualization_results").mkdir(parents=True, exist_ok=True)
+if 'frame_000000' in frames:
+    plot_frame(frames['frame_000000'], "Frame 000 (raw grid)", grid_size, cmap='gray')
+else:
+    print("frame_000000.bin not found in frames/")
 
 
 # %% Print first and last frame
@@ -278,7 +293,6 @@ if isText:
     frame999 = frames['frame_000999']
     plot_frame_diff(frame0, frame999, grid_size, title="Pixelweise Differenz (uint8)")
 else:
-    print("Data is an image")
     show_frame_decoded_from_grid(last_frame, N=grid_size,
                                 original_size=original_size,
                                 order="hi-lo",
@@ -287,7 +301,9 @@ else:
 # Animate all frames and save as MP4
 if saveAnimation & isText:
     print("Saving animations...")
-    animate_frames(frames, grid_size, outfile='visualization_results/grid_frames_visualization.mp4', fps=20, cmap='gray')
-    animate_frame_diffs(frames, grid_size, outfile='visualization_results/frames_diff_visualization.mp4', fps=20, cmap='bwr')
+    animate_frames(frames, grid_size, outfile='results/visualization_results/grid_frames_visualization.mp4', fps=20, cmap='gray')
+    animate_frame_diffs(frames, grid_size, outfile='results/visualization_results/frames_diff_visualization.mp4', fps=20, cmap='bwr')
 
 
+
+# %%
