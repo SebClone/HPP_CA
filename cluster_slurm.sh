@@ -4,8 +4,8 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=sroth@hs-koblenz.de
 #SBATCH --time=0-16:00:00
-#SBATCH --ntasks=10           # Maximal benötigte Prozesszahl
-#SBATCH --cpus-per-task=10 # OpenMP Threads pro Prozess
+#SBATCH --ntasks=32           # Maximal benötigte Prozesszahl
+#SBATCH --cpus-per-task=4 # OpenMP Threads pro Prozess
 #SBATCH --mem-per-cpu=2000
 
 module purge
@@ -15,10 +15,10 @@ module load OpenMPI/5.0.7-GCC-14.2.0
 set -euo pipefail
 
 # -------------------- Parameter-Sweeps --------------------
-NP_LIST=(1 2 4 6 8 10)             # MPI ranks
-OMP_LIST=(1 2 4 6 8 10)            # OpenMP threads
+NP_LIST=(1 2 4 8 16 32)             # MPI ranks
+OMP_LIST=(1 2 4)            # OpenMP threads
 GRID_LIST=(32 64 128 256 1024 2048 4096)         # Grid sizes N
-ITERS_LIST=(1000 5000)     # Iterations
+ITERS_LIST=(2000)     # Iterations
 REPEATS=1                 # number of repetitions per configuration
 
 # -------------------- Build once ---------------------------
