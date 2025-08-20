@@ -131,7 +131,7 @@ def strong_scaling_combined(data, grids, num_itrs):
     ax.set_xlabel("Total cores (np × omp_threads)")
     ax.set_ylabel("Speedup vs 1 core")
     ax.set_title(f"Strong scaling — encrypt only; iters={num_itrs}")
-    ax.set_ylim(0, 100)  # Adjust as needed
+    ax.set_ylim(0, 40)  # Adjust as needed
     ax.legend()
     ax.grid(True, linestyle=":")
     plt.tight_layout()
