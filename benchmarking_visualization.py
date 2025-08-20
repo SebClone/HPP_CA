@@ -44,6 +44,7 @@ def plot_best_vs_baseline(data):
             ax.plot(merged["grid"], merged["runtime_s_baseline"], marker="^", linestyle="--", label="Decrypt baseline")
 
     ax.set_xlabel("Grid size")
+    ax.set_xscale("log", base=2)
     ax.set_ylabel("Runtime [s]")
     ax.set_title("Best config vs. baseline — encrypt & decrypt")
     ax.legend()
